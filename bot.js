@@ -1,11 +1,10 @@
 const { ethers } = require('ethers');
 require('dotenv').config();
 
-// Configuration
-const config = {
+// Konfigurasi untuk multiple accounts
+const globalConfig = {
   rpc: 'https://arbitrum-sepolia.gateway.tenderly.co',
   chainId: 421614,
-  privateKey: process.env.PRIVATE_KEY, // Store your private key in .env file
   tokens: {
     virtual: '0xFF27D611ab162d7827bbbA59F140C1E7aE56e95C',
     ath: '0x1428444Eacdc0Fd115dd4318FcE65B61Cd1ef399',
@@ -33,7 +32,7 @@ const config = {
   gasPrice: ethers.utils.parseUnits('0.1', 'gwei')
 };
 
-// ABI for ERC20 token
+// ABI untuk token ERC20
 const erc20Abi = [
   'function balanceOf(address owner) view returns (uint256)',
   'function decimals() view returns (uint8)',
@@ -41,228 +40,315 @@ const erc20Abi = [
   'function symbol() view returns (string)'
 ];
 
-// Initialize provider and signer
-const provider = new ethers.providers.JsonRpcProvider(config.rpc);
-const wallet = new ethers.Wallet(config.privateKey, provider);
-
-// Function to get token balance
-async function getTokenBalance(tokenAddress) {
-  const tokenContract = new ethers.Contract(tokenAddress, erc20Abi, wallet);
-  const decimals = await tokenContract.decimals();
-  const balance = await tokenContract.balanceOf(wallet.address);
-  let symbol = '';
+// Daftar private key dari file .env
+// Format di .env: PRIVATE_KEY_1=abc123..., PRIVATE_KEY_2=def456..., dst.
+function getPrivateKeys() {
+  const privateKeys = [];
+  let index = 1;
   
-  try {
-    symbol = await tokenContract.symbol();
-  } catch (error) {
-    symbol = 'TOKEN';
+  while (true) {
+    const key = process.env[`PRIVATE_KEY_${index}`];
+    if (!key) break;
+    privateKeys.push(key);
+    index++;
   }
   
-  return {
-    balance,
-    decimals,
-    formatted: ethers.utils.formatUnits(balance, decimals),
-    symbol
-  };
+  // Jika tidak ada private key dengan format di atas, gunakan format lama
+  if (privateKeys.length === 0 && process.env.PRIVATE_KEY) {
+    privateKeys.push(process.env.PRIVATE_KEY);
+  }
+  
+  return privateKeys;
 }
 
-// Function to get ETH balance
-async function getEthBalance() {
-  const balanceWei = await provider.getBalance(wallet.address);
-  return {
-    balance: balanceWei,
-    formatted: ethers.utils.formatEther(balanceWei)
-  };
-}
-
-// Function to swap token using direct amount encoding (Method 1)
-async function swapToken(tokenName) {
-  try {
-    console.log(`\n=== Processing ${tokenName.toUpperCase()} Swap ===`);
+// Buat class untuk wallet bot
+class WalletBot {
+  constructor(privateKey, config) {
+    this.config = config;
+    this.provider = new ethers.providers.JsonRpcProvider(config.rpc);
+    this.wallet = new ethers.Wallet(privateKey, this.provider);
+    this.address = this.wallet.address;
+  }
+  
+  // Function untuk mendapatkan token balance
+  async getTokenBalance(tokenAddress) {
+    const tokenContract = new ethers.Contract(tokenAddress, erc20Abi, this.wallet);
+    const decimals = await tokenContract.decimals();
+    const balance = await tokenContract.balanceOf(this.wallet.address);
+    let symbol = '';
     
-    const tokenAddress = config.tokens[tokenName];
-    const routerAddress = config.routers[tokenName];
-    const methodId = config.methodIds[`${tokenName}Swap`];
+    try {
+      symbol = await tokenContract.symbol();
+    } catch (error) {
+      symbol = 'TOKEN';
+    }
     
-    if (!routerAddress || !methodId) {
-      console.error(`Missing configuration for ${tokenName}`);
+    return {
+      balance,
+      decimals,
+      formatted: ethers.utils.formatUnits(balance, decimals),
+      symbol
+    };
+  }
+  
+  // Function untuk mendapatkan ETH balance
+  async getEthBalance() {
+    const balanceWei = await this.provider.getBalance(this.wallet.address);
+    return {
+      balance: balanceWei,
+      formatted: ethers.utils.formatEther(balanceWei)
+    };
+  }
+  
+  // Function untuk swap token
+  async swapToken(tokenName) {
+    try {
+      console.log(`\n=== [${this.address.substring(0, 6)}...] Processing ${tokenName.toUpperCase()} Swap ===`);
+      
+      const tokenAddress = this.config.tokens[tokenName];
+      const routerAddress = this.config.routers[tokenName];
+      const methodId = this.config.methodIds[`${tokenName}Swap`];
+      
+      if (!routerAddress || !methodId) {
+        console.error(`Missing configuration for ${tokenName}`);
+        return false;
+      }
+      
+      const tokenContract = new ethers.Contract(tokenAddress, erc20Abi, this.wallet);
+      const { balance, decimals, formatted, symbol } = await this.getTokenBalance(tokenAddress);
+      console.log(`Current ${symbol} balance: ${formatted}`);
+      
+      if (balance.isZero()) {
+        console.log(`No ${symbol} tokens available to swap.`);
+        return false;
+      }
+      
+      console.log(`Swapping ${formatted} ${symbol}`);
+      
+      // Cek ETH balance untuk gas
+      const ethBalance = await this.getEthBalance();
+      console.log(`ETH balance for gas: ${ethBalance.formatted} ETH`);
+      
+      // Approve router untuk menggunakan tokens
+      console.log(`Approving ${formatted} ${symbol} for swap...`);
+      
+      const approveTx = await tokenContract.approve(routerAddress, balance, {
+        gasLimit: this.config.gasLimit,
+        gasPrice: this.config.gasPrice
+      });
+      await approveTx.wait();
+      console.log(`Approved ${symbol} for swap. Tx hash: ${approveTx.hash}`);
+      
+      // Menggunakan Method 1: Direct amount encoding
+      const data = methodId + 
+                  ethers.utils.defaultAbiCoder.encode(
+                    ['uint256'], 
+                    [balance]
+                  ).slice(2);
+      
+      const swapTx = await this.wallet.sendTransaction({
+        to: routerAddress,
+        data: data,
+        gasLimit: this.config.gasLimit,
+        gasPrice: this.config.gasPrice
+      });
+      
+      const receipt = await swapTx.wait();
+      console.log(`Swap completed for ${symbol}. Tx hash: ${swapTx.hash}`);
+      
+      // Cek balance setelah swap
+      const afterBalance = await this.getTokenBalance(tokenAddress);
+      console.log(`${symbol} balance after swap: ${afterBalance.formatted}`);
+      
+      return true;
+    } catch (error) {
+      console.error(`Error swapping ${tokenName}:`, error.message);
       return false;
     }
-    
-    const tokenContract = new ethers.Contract(tokenAddress, erc20Abi, wallet);
-    const { balance, decimals, formatted, symbol } = await getTokenBalance(tokenAddress);
-    console.log(`Current ${symbol} balance: ${formatted}`);
-    
-    if (balance.isZero()) {
-      console.log(`No ${symbol} tokens available to swap.`);
+  }
+  
+  // Function untuk stake token
+  async stakeToken(tokenName) {
+    try {
+      console.log(`\n=== [${this.address.substring(0, 6)}...] Processing ${tokenName.toUpperCase()} Staking ===`);
+      
+      const tokenAddress = this.config.tokens[tokenName];
+      const stakeContractAddress = this.config.stakeContracts[tokenName];
+      
+      if (!stakeContractAddress) {
+        console.error(`No stake contract found for token: ${tokenName}`);
+        return false;
+      }
+      
+      const tokenContract = new ethers.Contract(tokenAddress, erc20Abi, this.wallet);
+      const { balance, decimals, formatted, symbol } = await this.getTokenBalance(tokenAddress);
+      console.log(`Current ${symbol} balance: ${formatted}`);
+      
+      if (balance.isZero()) {
+        console.log(`No ${symbol} tokens available to stake.`);
+        return false;
+      }
+      
+      console.log(`Staking ${formatted} ${symbol}`);
+      
+      // Cek ETH balance untuk gas
+      const ethBalance = await this.getEthBalance();
+      console.log(`ETH balance for gas: ${ethBalance.formatted} ETH`);
+      
+      // Approve staking contract untuk menggunakan tokens
+      console.log(`Approving ${formatted} ${symbol} for staking...`);
+      
+      const approveTx = await tokenContract.approve(stakeContractAddress, balance, {
+        gasLimit: this.config.gasLimit,
+        gasPrice: this.config.gasPrice
+      });
+      await approveTx.wait();
+      console.log(`Approved ${symbol} for staking. Tx hash: ${approveTx.hash}`);
+      
+      // Build stake transaction (menggunakan direct amount encoding)
+      console.log(`Executing stake for ${formatted} ${symbol}...`);
+      const data = this.config.methodIds.stake + 
+                  ethers.utils.defaultAbiCoder.encode(
+                    ['uint256'], 
+                    [balance]
+                  ).slice(2);
+      
+      const stakeTx = await this.wallet.sendTransaction({
+        to: stakeContractAddress,
+        data: data,
+        gasLimit: this.config.gasLimit,
+        gasPrice: this.config.gasPrice
+      });
+      
+      const receipt = await stakeTx.wait();
+      console.log(`Staking completed for ${symbol}. Tx hash: ${stakeTx.hash}`);
+      
+      // Cek balance setelah staking
+      const afterBalance = await this.getTokenBalance(tokenAddress);
+      console.log(`${symbol} balance after staking: ${afterBalance.formatted}`);
+      
+      return true;
+    } catch (error) {
+      console.error(`Error staking ${tokenName}:`, error.message);
       return false;
     }
-    
-    console.log(`Swapping ${formatted} ${symbol}`);
-    
-    // Check ETH balance for gas
-    const ethBalance = await getEthBalance();
-    console.log(`ETH balance for gas: ${ethBalance.formatted} ETH`);
-    
-    // Approve router to spend tokens
-    console.log(`Approving ${formatted} ${symbol} for swap...`);
-    
-    const approveTx = await tokenContract.approve(routerAddress, balance, {
-      gasLimit: config.gasLimit,
-      gasPrice: config.gasPrice
-    });
-    await approveTx.wait();
-    console.log(`Approved ${symbol} for swap. Tx hash: ${approveTx.hash}`);
-    
-    // Using Method 1: Direct amount encoding
-    const data = methodId + 
-                ethers.utils.defaultAbiCoder.encode(
-                  ['uint256'], 
-                  [balance]
-                ).slice(2);
-    
-    const swapTx = await wallet.sendTransaction({
-      to: routerAddress,
-      data: data,
-      gasLimit: config.gasLimit,
-      gasPrice: config.gasPrice
-    });
-    
-    const receipt = await swapTx.wait();
-    console.log(`Swap completed for ${symbol}. Tx hash: ${swapTx.hash}`);
-    
-    // Check balance after swap
-    const afterBalance = await getTokenBalance(tokenAddress);
-    console.log(`${symbol} balance after swap: ${afterBalance.formatted}`);
-    
-    return true;
-  } catch (error) {
-    console.error(`Error swapping ${tokenName}:`, error.message);
-    return false;
   }
-}
-
-// Function to stake tokens using MAX balance
-async function stakeToken(tokenName) {
-  try {
-    console.log(`\n=== Processing ${tokenName.toUpperCase()} Staking ===`);
-    
-    const tokenAddress = config.tokens[tokenName];
-    const stakeContractAddress = config.stakeContracts[tokenName];
-    
-    if (!stakeContractAddress) {
-      console.error(`No stake contract found for token: ${tokenName}`);
-      return false;
-    }
-    
-    const tokenContract = new ethers.Contract(tokenAddress, erc20Abi, wallet);
-    const { balance, decimals, formatted, symbol } = await getTokenBalance(tokenAddress);
-    console.log(`Current ${symbol} balance: ${formatted}`);
-    
-    if (balance.isZero()) {
-      console.log(`No ${symbol} tokens available to stake.`);
-      return false;
-    }
-    
-    console.log(`Staking ${formatted} ${symbol}`);
-    
-    // Check ETH balance for gas
-    const ethBalance = await getEthBalance();
-    console.log(`ETH balance for gas: ${ethBalance.formatted} ETH`);
-    
-    // Approve staking contract to spend tokens
-    console.log(`Approving ${formatted} ${symbol} for staking...`);
-    
-    const approveTx = await tokenContract.approve(stakeContractAddress, balance, {
-      gasLimit: config.gasLimit,
-      gasPrice: config.gasPrice
-    });
-    await approveTx.wait();
-    console.log(`Approved ${symbol} for staking. Tx hash: ${approveTx.hash}`);
-    
-    // Build stake transaction (using direct amount encoding like Method 1)
-    console.log(`Executing stake for ${formatted} ${symbol}...`);
-    const data = config.methodIds.stake + 
-                ethers.utils.defaultAbiCoder.encode(
-                  ['uint256'], 
-                  [balance]
-                ).slice(2);
-    
-    const stakeTx = await wallet.sendTransaction({
-      to: stakeContractAddress,
-      data: data,
-      gasLimit: config.gasLimit,
-      gasPrice: config.gasPrice
-    });
-    
-    const receipt = await stakeTx.wait();
-    console.log(`Staking completed for ${symbol}. Tx hash: ${stakeTx.hash}`);
-    
-    // Check balance after staking
-    const afterBalance = await getTokenBalance(tokenAddress);
-    console.log(`${symbol} balance after staking: ${afterBalance.formatted}`);
-    
-    return true;
-  } catch (error) {
-    console.error(`Error staking ${tokenName}:`, error.message);
-    return false;
-  }
-}
-
-// Function to check wallet status
-async function checkWalletStatus() {
-  console.log('\n=== Wallet Status ===');
-  console.log(`Address: ${wallet.address}`);
   
-  const ethBalance = await getEthBalance();
-  console.log(`ETH Balance: ${ethBalance.formatted} ETH`);
-  
-  for (const [name, address] of Object.entries(config.tokens)) {
-    const { formatted, symbol } = await getTokenBalance(address);
-    console.log(`${symbol} (${name.toUpperCase()}) Balance: ${formatted}`);
+  // Function untuk cek status wallet
+  async checkWalletStatus() {
+    console.log(`\n=== Wallet Status [${this.address}] ===`);
+    
+    const ethBalance = await this.getEthBalance();
+    console.log(`ETH Balance: ${ethBalance.formatted} ETH`);
+    
+    for (const [name, address] of Object.entries(this.config.tokens)) {
+      const { formatted, symbol } = await this.getTokenBalance(address);
+      console.log(`${symbol} (${name.toUpperCase()}) Balance: ${formatted}`);
+    }
+    console.log('====================\n');
   }
-  console.log('====================\n');
+  
+  // Function untuk menjalankan bot
+  async runBot() {
+    console.log(`\nStarting auto swap and stake bot for wallet: ${this.address}`);
+    
+    try {
+      // Cek status wallet sebelum operasi
+      await this.checkWalletStatus();
+      
+      // 1. Try to swap Virtual tokens
+      if (this.config.routers.virtual) {
+        await this.swapToken('virtual');
+      }
+      
+      // 2. Try to swap ATH tokens
+      if (this.config.routers.ath) {
+        await this.swapToken('ath');
+      }
+      
+      // 3. Try to stake tokens
+      for (const tokenName of Object.keys(this.config.stakeContracts)) {
+        await this.stakeToken(tokenName);
+      }
+      
+      // Cek status wallet setelah operasi
+      await this.checkWalletStatus();
+      
+      console.log(`Bot execution completed for wallet: ${this.address}`);
+    } catch (error) {
+      console.error(`Error running bot for wallet ${this.address}:`, error);
+    }
+  }
 }
 
-// Main function to run the bot
-async function runBot() {
-  console.log('Starting auto swap and stake bot...');
+// Main function untuk menjalankan semua bot
+async function runAllBots() {
+  console.log('Starting multi-account swap and stake bot...');
   
-  try {
-    // Check wallet status before operations
-    await checkWalletStatus();
-    
-    // 1. Try to swap Virtual tokens
-    if (config.routers.virtual) {
-      await swapToken('virtual');
-    }
-    
-    // 2. Try to swap ATH tokens
-    if (config.routers.ath) {
-      await swapToken('ath');
-    }
-    
-    // 3. Try to stake tokens
-    for (const tokenName of Object.keys(config.stakeContracts)) {
-      await stakeToken(tokenName);
-    }
-    
-    // Check wallet status after operations
-    await checkWalletStatus();
-    
-    console.log('Bot execution completed');
-  } catch (error) {
-    console.error('Error running bot:', error);
+  const privateKeys = getPrivateKeys();
+  
+  if (privateKeys.length === 0) {
+    console.error('No private keys found in .env file!');
+    console.log('Please add PRIVATE_KEY_1, PRIVATE_KEY_2, etc. to your .env file');
+    return;
   }
+  
+  console.log(`Found ${privateKeys.length} accounts to process`);
+  
+  // Jalankan bot untuk setiap private key (secara berurutan)
+  // Ini untuk menghindari rate limiting dari RPC provider
+  for (let i = 0; i < privateKeys.length; i++) {
+    console.log(`\n============================================`);
+    console.log(`Processing account ${i+1} of ${privateKeys.length}`);
+    console.log(`============================================`);
+    
+    const bot = new WalletBot(privateKeys[i], globalConfig);
+    await bot.runBot();
+  }
+  
+  console.log('\nAll accounts processed successfully!');
 }
 
-// Run the bot once
-runBot()
-  .then(() => console.log('Bot execution finished'))
-  .catch(error => console.error('Failed to run bot:', error));
+// Fungsi untuk menjalankan bot secara parallel (lebih cepat tapi bisa kena rate limit)
+async function runAllBotsParallel() {
+  console.log('Starting multi-account swap and stake bot in parallel mode...');
+  
+  const privateKeys = getPrivateKeys();
+  
+  if (privateKeys.length === 0) {
+    console.error('No private keys found in .env file!');
+    console.log('Please add PRIVATE_KEY_1, PRIVATE_KEY_2, etc. to your .env file');
+    return;
+  }
+  
+  console.log(`Found ${privateKeys.length} accounts to process simultaneously`);
+  
+  // Buat array dari semua promise bot
+  const botPromises = privateKeys.map(pk => {
+    const bot = new WalletBot(pk, globalConfig);
+    return bot.runBot();
+  });
+  
+  // Jalankan semua bot secara bersamaan
+  await Promise.all(botPromises);
+  
+  console.log('\nAll accounts processed simultaneously!');
+}
 
-// Uncomment to run the bot on a schedule (e.g., every hour)
+// Run bot secara berurutan (default dan lebih aman)
+runAllBots()
+  .then(() => console.log('Multi-account bot execution finished'))
+  .catch(error => console.error('Failed to run multi-account bot:', error));
+
+// Uncomment untuk mode parallel (lebih cepat tapi berisiko rate limiting)
 /*
-const INTERVAL_MS = 3600000; // 1 hour
-setInterval(runBot, INTERVAL_MS);
+runAllBotsParallel()
+  .then(() => console.log('Parallel multi-account bot execution finished'))
+  .catch(error => console.error('Failed to run parallel multi-account bot:', error));
+*/
+
+// Uncomment untuk menjalankan bot pada jadwal tertentu (misalnya setiap jam)
+/*
+const INTERVAL_MS = 3600000; // 1 jam
+setInterval(runAllBots, INTERVAL_MS);
 */
