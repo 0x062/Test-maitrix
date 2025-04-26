@@ -1,4 +1,5 @@
 const { ethers } = require('ethers');
+const axios = require('axios');
 require('dotenv').config();
 
 // Konfigurasi untuk multiple accounts
@@ -247,6 +248,47 @@ class WalletBot {
     }
     console.log('====================\n');
   }
+
+  async claimFaucets() {
+    console.log(`\n=== [${this.address.substring(0, 6)}...] Claiming Faucet Tokens ===`);
+    
+    // Konfigurasi endpoint faucet
+    const faucetEndpoints = {
+      ath: "https://app.x-network.io/maitrix-faucet/faucet",
+      usde: "https://app.x-network.io/maitrix-usde/faucet",
+      lvlusd: "https://app.x-network.io/maitrix-lvl/faucet",
+      virtual: "https://app.x-network.io/maitrix-virtual/faucet"
+    };
+    
+    
+    
+    // Claim setiap jenis token
+    for (const [tokenName, endpoint] of Object.entries(faucetEndpoints)) {
+      try {
+        console.log(`Claiming ${tokenName.toUpperCase()} tokens...`);
+        
+        const response = await axios.post(endpoint, {
+          address: this.address
+        });
+        
+        if (response.status === 200) {
+          console.log(`✅ Successfully claimed ${tokenName.toUpperCase()} tokens`);
+        }
+      } catch (error) {
+        // Tampilkan pesan error
+        if (error.response && error.response.data) {
+          console.log(`❌ ${tokenName.toUpperCase()} claim failed: ${JSON.stringify(error.response.data)}`);
+        } else {
+          console.log(`❌ Error claiming ${tokenName.toUpperCase()}: ${error.message}`);
+        }
+      }
+      
+      // Tunggu 3 detik sebelum request berikutnya untuk menghindari rate limiting
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+    
+    console.log(`Completed claiming tokens for wallet: ${this.address}`);
+  }
   
   // Function untuk menjalankan bot
   async runBot() {
@@ -255,6 +297,8 @@ class WalletBot {
     try {
       // Cek status wallet sebelum operasi
       await this.checkWalletStatus();
+
+      await this.claimFaucets();
       
       // 1. Try to swap Virtual tokens
       if (this.config.routers.virtual) {
@@ -340,15 +384,7 @@ runAllBots()
   .then(() => console.log('Multi-account bot execution finished'))
   .catch(error => console.error('Failed to run multi-account bot:', error));
 
-// Uncomment untuk mode parallel (lebih cepat tapi berisiko rate limiting)
-/*
-runAllBotsParallel()
-  .then(() => console.log('Parallel multi-account bot execution finished'))
-  .catch(error => console.error('Failed to run parallel multi-account bot:', error));
-*/
-
-// Uncomment untuk menjalankan bot pada jadwal tertentu (misalnya setiap jam)
-/*
-const INTERVAL_MS = 3600000; // 1 jam
-setInterval(runAllBots, INTERVAL_MS);
-*/
+  const INTERVAL_MS = 86400000; // 24 jam (24 * 60 * 60 * 1000)
+  console.log(`Bot akan dijalankan lagi secara otomatis setiap ${INTERVAL_MS/3600000} jam`);
+  console.log(`Eksekusi berikutnya pada: ${new Date(Date.now() + INTERVAL_MS).toLocaleString()}`);
+  setInterval(runAllBots, INTERVAL_MS);
