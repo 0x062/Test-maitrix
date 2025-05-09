@@ -25,7 +25,7 @@ const globalConfig = {
     usde: '0x07f8ec2B79B7A1998Fd0B21a4668B0Cf1cA72C02',
     lvlusd: '0x5De3fBd40D4c3892914c3b67b5B529D776A1483A',
     vusd: '0x5bb9Fa02a3DCCDB4E9099b48e8Ba5841D2e59d51',
-    vnusd: '0x2608A88219BFB34519f635Dd9Ca2Ae971539ca60'
+    vnusd: '0x46a6585a0Ad1750d37B4e6810EB59cBDf591Dc30'
   },
   methodIds: {
     virtualSwap: '0xa6d67510',
