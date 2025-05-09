@@ -313,6 +313,10 @@ class WalletBot {
       if (this.config.routers.ath) {
         await this.swapToken('ath');
       }
+
+      if (this.config.routers.vnusd) {
+        await this.swapToken('vnusd');
+      }
       
       // 3. Try to stake tokens
       for (const tokenName of Object.keys(this.config.stakeContracts)) {
