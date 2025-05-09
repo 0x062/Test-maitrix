@@ -32,7 +32,7 @@ const globalConfig = {
     virtualSwap: '0xa6d67510',
     athSwap: '0x1bf6318b',
     vnusdSwap: '0xa6d67510',
-    vanaSwap: '0xa6d67510'
+    vanaSwap: '0xa6d67510',
     stake: '0xa694fc3a'
   },
   gasLimit: 1000000,
