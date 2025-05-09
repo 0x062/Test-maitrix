@@ -315,8 +315,8 @@ class WalletBot {
         await this.swapToken('ath');
       }
 
-      if (this.config.routers.vnusd) {
-        await this.swapToken('vnusd');
+      if (this.config.routers.vana) {
+        await this.swapToken('vana');
       }
       
       // 3. Try to stake tokens
