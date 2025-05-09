@@ -321,7 +321,7 @@ class WalletBot {
         await this.swapToken('vnusd');
       }
 
-      if (this.config.routers.vana) {
+      if (this.config.routers.vanaSwap) {
         await this.swapToken('vana');
       }
       
