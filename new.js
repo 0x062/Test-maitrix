@@ -30,7 +30,7 @@ const globalConfig = {
   methodIds: {
     virtualSwap: '0xa6d67510',
     athSwap: '0x1bf6318b',
-    vnusdSwap: '0xa6d67510',
+    vanadSwap: '0xa6d67510',
     stake: '0xa694fc3a'
   },
   gasLimit: 1000000,
@@ -316,7 +316,7 @@ class WalletBot {
       }
 
       if (this.config.routers.vnusd) {
-        await this.swapToken('vnusd');
+        await this.swapToken('vana');
       }
       
       // 3. Try to stake tokens
