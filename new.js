@@ -18,18 +18,19 @@ const globalConfig = {
   routers: {
     virtual: '0x3dCACa90A714498624067948C092Dd0373f08265',
     ath: '0x2cFDeE1d5f04dD235AEA47E1aD2fB66e3A61C13e',
-    vnusd:'0x3dCACa90A714498624067948C092Dd0373f08265'
+    vnusd:'0xEfbAE3A68b17a61f21C7809Edfa8Aa3CA7B2546f'
   },
   stakeContracts: {
     ausd: '0x054de909723ECda2d119E31583D40a52a332f85c',
     usde: '0x07f8ec2B79B7A1998Fd0B21a4668B0Cf1cA72C02',
     lvlusd: '0x5De3fBd40D4c3892914c3b67b5B529D776A1483A',
     vusd: '0x5bb9Fa02a3DCCDB4E9099b48e8Ba5841D2e59d51',
-    vnusd: '0x46a6585a0Ad1750d37B4e6810EB59cBDf591Dc30'
+    vnusd: '0x2608A88219BFB34519f635Dd9Ca2Ae971539ca60'
   },
   methodIds: {
     virtualSwap: '0xa6d67510',
     athSwap: '0x1bf6318b',
+    vnusd: '0xa6d67510',
     stake: '0xa694fc3a'
   },
   gasLimit: 1000000,
