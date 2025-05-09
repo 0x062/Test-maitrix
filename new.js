@@ -13,6 +13,7 @@ const globalConfig = {
     usde: '0xf4BE938070f59764C85fAcE374F92A4670ff3877',
     lvlusd: '0x8802b7bcF8EedCc9E1bA6C20E139bEe89dd98E83',
     vusd: '0xc14A8E2Fc341A97a57524000bF0F7F1bA4de4802',
+    vana: '0xBEbF4E25652e7F23CCdCCcaaCB32004501c4BfF8',
     vnusd: '0x46a6585a0Ad1750d37B4e6810EB59cBDf591Dc30'
   },
   routers: {
@@ -31,6 +32,7 @@ const globalConfig = {
     virtualSwap: '0xa6d67510',
     athSwap: '0x1bf6318b',
     vnusdSwap: '0xa6d67510',
+    vanaSwap: '0xa6d67510'
     stake: '0xa694fc3a'
   },
   gasLimit: 1000000,
@@ -317,6 +319,10 @@ class WalletBot {
 
       if (this.config.routers.vnusd) {
         await this.swapToken('vnusd');
+      }
+
+      if (this.config.routers.vana) {
+        await this.swapToken('vana');
       }
       
       // 3. Try to stake tokens
