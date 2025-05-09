@@ -316,7 +316,7 @@ class WalletBot {
       }
 
       if (this.config.routers.vnusd) {
-        await this.swapToken('vana');
+        await this.swapToken('vnusd');
       }
       
       // 3. Try to stake tokens
