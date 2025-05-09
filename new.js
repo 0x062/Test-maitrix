@@ -30,7 +30,7 @@ const globalConfig = {
   methodIds: {
     virtualSwap: '0xa6d67510',
     athSwap: '0x1bf6318b',
-    vnusd: '0xa6d67510',
+    vnusdSwap: '0xa6d67510',
     stake: '0xa694fc3a'
   },
   gasLimit: 1000000,
