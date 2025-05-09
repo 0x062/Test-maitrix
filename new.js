@@ -52,7 +52,8 @@ function getPrivateKeys() {
   return keys;
 }
 
-// WalletBot class\ nclass WalletBot {
+// WalletBot class
+class WalletBot {
   constructor(privateKey) {
     this.provider = new ethers.providers.JsonRpcProvider(globalConfig.rpc);
     this.wallet   = new ethers.Wallet(privateKey, this.provider);
@@ -101,7 +102,7 @@ function getPrivateKeys() {
         balance, amountOutMin, path, this.address, deadline,
         { gasLimit: globalConfig.gasLimit, gasPrice: globalConfig.gasPrice }
       );
-      const receipt = await tx.wait();
+      await tx.wait();
       console.log(`Swap tx: ${tx.hash}`);
 
       const outBal = await this.getTokenBalance(outAddr);
@@ -119,7 +120,7 @@ function getPrivateKeys() {
   }
 }
 
-// Main
+// Main execution
 (async () => {
   const keys = getPrivateKeys();
   if (!keys.length) return console.error('No private keys in .env');
