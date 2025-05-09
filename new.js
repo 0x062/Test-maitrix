@@ -19,7 +19,8 @@ const globalConfig = {
   routers: {
     virtual: '0x3dCACa90A714498624067948C092Dd0373f08265',
     ath: '0x2cFDeE1d5f04dD235AEA47E1aD2fB66e3A61C13e',
-    vnusd:'0xefbae3a68b17a61f21c7809edfa8aa3ca7b2546f'
+    vnusd:'0xefbae3a68b17a61f21c7809edfa8aa3ca7b2546f',
+    vana: '0xefbae3a68b17a61f21c7809edfa8aa3ca7b2546f'
   },
   stakeContracts: {
     ausd: '0x054de909723ECda2d119E31583D40a52a332f85c',
@@ -321,7 +322,7 @@ class WalletBot {
         await this.swapToken('vnusd');
       }
 
-      if (this.config.routers.vanaSwap) {
+      if (this.config.routers.vana) {
         await this.swapToken('vana');
       }
       
