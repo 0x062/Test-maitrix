@@ -345,12 +345,11 @@ async stakeToken(tokenName, customTokenAddress = null) {
   }
 }
 
-// Main function untuk menjalankan semua bot
-async function runAllBots() {
+// Main function untuk menjalankan semua bot (sequential)
+const runAllBots = async () => {
   console.log('Starting multi-account swap and stake bot...');
   
   const privateKeys = getPrivateKeys();
-  
   if (privateKeys.length === 0) {
     console.error('No private keys found in .env file!');
     console.log('Please add PRIVATE_KEY_1, PRIVATE_KEY_2, etc. to your .env file');
@@ -359,26 +358,23 @@ async function runAllBots() {
   
   console.log(`Found ${privateKeys.length} accounts to process`);
   
-  // Jalankan bot untuk setiap private key (secara berurutan)
-  // Ini untuk menghindari rate limiting dari RPC provider
   for (let i = 0; i < privateKeys.length; i++) {
-    console.log(`\n============================================`);
+    console.log('\n============================================');
     console.log(`Processing account ${i+1} of ${privateKeys.length}`);
-    console.log(`============================================`);
+    console.log('============================================');
     
     const bot = new WalletBot(privateKeys[i], globalConfig);
     await bot.runBot();
   }
   
   console.log('\nAll accounts processed successfully!');
-}
+};
 
-// Fungsi untuk menjalankan bot secara parallel (lebih cepat tapi bisa kena rate limit)
-async function runAllBotsParallel() {
+// Parallel version (jika diperlukan)
+const runAllBotsParallel = async () => {
   console.log('Starting multi-account swap and stake bot in parallel mode...');
   
   const privateKeys = getPrivateKeys();
-  
   if (privateKeys.length === 0) {
     console.error('No private keys found in .env file!');
     console.log('Please add PRIVATE_KEY_1, PRIVATE_KEY_2, etc. to your .env file');
@@ -387,24 +383,22 @@ async function runAllBotsParallel() {
   
   console.log(`Found ${privateKeys.length} accounts to process simultaneously`);
   
-  // Buat array dari semua promise bot
   const botPromises = privateKeys.map(pk => {
     const bot = new WalletBot(pk, globalConfig);
     return bot.runBot();
   });
   
-  // Jalankan semua bot secara bersamaan
   await Promise.all(botPromises);
-  
   console.log('\nAll accounts processed simultaneously!');
-}
+};
 
-// Run bot secara berurutan (default dan lebih aman)
+// Jalankan bot secara berurutan (default dan lebih aman)
 runAllBots()
   .then(() => console.log('Multi-account bot execution finished'))
   .catch(error => console.error('Failed to run multi-account bot:', error));
 
-  const INTERVAL_MS = 86400000; // 24 jam (24 * 60 * 60 * 1000)
-  console.log(`Bot akan dijalankan lagi secara otomatis setiap ${INTERVAL_MS/3600000} jam`);
-  console.log(`Eksekusi berikutnya pada: ${new Date(Date.now() + INTERVAL_MS).toLocaleString()}`);
-  setInterval(runAllBots, INTERVAL_MS);
+// Set interval 24 jam untuk otomatis rerun
+const INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 jam
+console.log(`Bot akan dijalankan lagi secara otomatis setiap ${INTERVAL_MS/3600000} jam`);
+console.log(`Eksekusi berikutnya pada: ${new Date(Date.now() + INTERVAL_MS).toLocaleString()}`);
+setInterval(runAllBots, INTERVAL_MS);
