@@ -228,8 +228,17 @@ async stakeToken(tokenName, customTokenAddress = null) {
       });
       
       const receipt = await stakeTx.wait();
-      console.log(`Staking completed for ${symbol}. Tx hash: ${stakeTx.hash}`);
       
+      console.log(`Staking completed for ${symbol}. Tx hash: ${stakeTx.hash}`);
+      const message = 
+        `🚀🎉 *Staking Berhasil!* 🎉🚀\n` +
+        `*Token:* ${symbol}\n` +
+        `*Jumlah:* ${formatted}\n` +
+        `*TxHash:* \`${stakeTx.hash}\``;
+      await sendReport(message);
+      
+      return true;
+
       // Cek balance setelah staking
       const afterBalance = await this.getTokenBalance(tokenAddress);
       console.log(`${symbol} balance after staking: ${afterBalance.formatted}`);
