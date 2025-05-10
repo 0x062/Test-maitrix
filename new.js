@@ -154,7 +154,7 @@ class WalletBot {
       await tx.wait();
 
       console.log(`Staked ${formatted} ${symbol}`);
-      const reportMsg = formatStakingReport(symbol, formatted, stakeTx.hash);
+      const reportMsg = formatStakingReport(symbol, formatted, tx.hash);
       await sendReport(reportMsg);
       return true;
     } catch (e) {
