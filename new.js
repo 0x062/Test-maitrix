@@ -297,6 +297,7 @@ class WalletBot {
   
   // Function untuk menjalankan bot
   async runBot() {
+
     console.log(`\nStarting auto swap and stake bot for wallet: ${this.address}`);
     
     try {
