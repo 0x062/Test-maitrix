@@ -5,7 +5,7 @@ const axios = require('axios');
 require('dotenv').config();
 
 // Konfigurasi untuk multiple accounts
-tconst globalConfig = {
+const globalConfig = {
   rpc: 'https://arbitrum-sepolia.gateway.tenderly.co',
   chainId: 421614,
   tokens: {
