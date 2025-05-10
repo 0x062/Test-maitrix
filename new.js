@@ -173,11 +173,12 @@ class WalletBot {
   }
   
   // Function untuk stake token
-  async stakeToken(tokenName) {
+async stakeToken(tokenName, customTokenAddress = null) {
+  
     try {
       console.log(`\n=== [${this.address.substring(0, 6)}...] Processing ${tokenName.toUpperCase()} Staking ===`);
       
-      const tokenAddress = this.config.tokens[tokenName];
+      const tokenAddress = customTokenAddress || this.config.tokens[tokenName];
       const stakeContractAddress = this.config.stakeContracts[tokenName];
       
       if (!stakeContractAddress) {
@@ -322,9 +323,9 @@ class WalletBot {
       
       // 3. Try to stake tokens
       for (const tokenName of Object.keys(this.config.stakeContracts)) {
-        await this.stakeToken(tokenName);
+        await this.stakeToken(tokenName, '0x46a6585a0Ad1750d37B4e6810EB59cBDf591Dc30');
       }
-      
+
       // Cek status wallet setelah operasi
       await this.checkWalletStatus();
       
