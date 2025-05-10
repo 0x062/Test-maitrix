@@ -4,7 +4,16 @@ const { sendReport } = require('./telegramReporter');
 const axios = require('axios');
 require('dotenv').config();
 
-// Konfigurasi untuk multiple accounts
+
+function formatStakingReport(token, amount, txHash) {
+  return (
+    `🚀🎉 *Staking Berhasil!* 🎉🚀\n` +
+    `*Token:* ${token}\n` +
+    `*Jumlah:* ${amount}\n` +
+    `*TxHash:* \`${txHash}\``
+  );
+}
+
 const globalConfig = {
   rpc: 'https://arbitrum-sepolia.gateway.tenderly.co',
   chainId: 421614,
@@ -145,7 +154,8 @@ class WalletBot {
       await tx.wait();
 
       console.log(`Staked ${formatted} ${symbol}`);
-      await sendReport(`🚀 Staking sukses: ${symbol} - ${formatted}`);
+      const reportMsg = formatStakingReport(symbol, formatted, stakeTx.hash);
+      await sendReport(reportMsg);
       return true;
     } catch (e) {
       console.error(`stakeToken error for ${tokenName}:`, e);
