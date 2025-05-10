@@ -1,4 +1,5 @@
 const { ethers } = require('ethers');
+const { sendReport } = require('./telegramReporter');
 const axios = require('axios');
 require('dotenv').config();
 
