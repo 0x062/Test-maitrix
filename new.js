@@ -305,44 +305,43 @@ async stakeToken(tokenName, customTokenAddress = null) {
     
     console.log(`Completed claiming tokens for wallet: ${this.address}`);
   }
-  
-  // Function untuk menjalankan bot
+
   async runBot() {
+  console.log(`\nStarting auto swap and stake bot for wallet: ${this.address}`);
+  
+  try {
+    // 1. Cek status sebelum operasi
+    await this.checkWalletStatus();
 
-    console.log(`\nStarting auto swap and stake bot for wallet: ${this.address}`);
+    // 2. Claim faucet tokens
+    await this.claimFaucets();
     
-    try {
-      // Cek status wallet sebelum operasi
-      await this.checkWalletStatus();
-
-      await this.claimFaucets();
-      
-      // 1. Try to swap Virtual tokens
-      if (this.config.routers.virtual) {
-        await this.swapToken('virtual');
-      }
-      
-      // 2. Try to swap ATH tokens
-      if (this.config.routers.ath) {
-        await this.swapToken('ath');
-      }
-      
-      if (this.config.routers.vnusd) {
-        await this.swapToken('vnusd');
-      }
-      
-      // 3. Try to stake tokens
-      for (const tokenName of Object.keys(this.config.stakeContracts)) {
-        await this.stakeToken(tokenName, '0x46a6585a0Ad1750d37B4e6810EB59cBDf591Dc30');
-      }
-
-      // Cek status wallet setelah operasi
-      await this.checkWalletStatus();
-      
-      console.log(`Bot execution completed for wallet: ${this.address}`);
-    } catch (error) {
-      console.error(`Error running bot for wallet ${this.address}:`, error);
+    // 3. Swap tokens sesuai konfigurasi
+    if (this.config.routers.virtual) {
+      await this.swapToken('virtual');
     }
+    if (this.config.routers.ath) {
+      await this.swapToken('ath');
+    }
+    if (this.config.routers.vnusd) {
+      await this.swapToken('vnusd');
+    }
+    
+    // 4. Stake tokens: hanya override VNUSD, token lain pakai default
+    for (const tokenName of Object.keys(this.config.stakeContracts)) {
+      if (tokenName === 'vnusd') {
+        await this.stakeToken(tokenName, '0x46a6585a0Ad1750d37B4e6810EB59cBDf591Dc30');
+      } else {
+        await this.stakeToken(tokenName);
+      }
+    }
+    
+    // 5. Cek status setelah operasi
+    await this.checkWalletStatus();
+    
+    console.log(`Bot execution completed for wallet: ${this.address}`);
+  } catch (error) {
+    console.error(`Error running bot for wallet ${this.address}:`, error);
   }
 }
 
