@@ -45,7 +45,8 @@ const globalConfig = {
     stake:       '0xa694fc3a'
   },
   gasLimit: 1000000,
-  gasPrice: ethers.utils.parseUnits('0.1', 'gwei')
+  gasPrice: ethers.utils.parseUnits('0.1', 'gwei'),
+  delayMs: 17000
 };
 
 // ABI untuk token ERC20
@@ -80,6 +81,10 @@ class WalletBot {
     this.wallet = new ethers.Wallet(privateKey, this.provider);
     this.address = this.wallet.address;
   }
+
+  async delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+    }
 
   async getTokenBalance(tokenAddr) {
     const c = new ethers.Contract(tokenAddr, erc20Abi, this.wallet);
@@ -118,10 +123,12 @@ class WalletBot {
           gasPrice: this.config.gasPrice
         });
       await approveTx.wait();
+      await this.delay(this.config.delayMs);
 
       const data = methodId + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
       const tx = await this.wallet.sendTransaction({ to: router, data, gasLimit: this.config.gasLimit, gasPrice: this.config.gasPrice });
       await tx.wait();
+      await this.delay(this.config.delayMs);
 
       console.log(`Swapped ${formatted} ${symbol}`);
       return true;
@@ -148,10 +155,12 @@ class WalletBot {
           gasPrice: this.config.gasPrice
         });
       await approveTx.wait();
+      await this.delay(this.config.delayMs);
 
       const data = this.config.methodIds.stake + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
       const tx = await this.wallet.sendTransaction({ to: stakeCt, data, gasLimit: this.config.gasLimit, gasPrice: this.config.gasPrice });
       await tx.wait();
+      await this.delay(this.config.delayMs);
 
       console.log(`Staked ${formatted} ${symbol}`);
       const reportMsg = formatStakingReport(symbol, formatted, tx.hash);
@@ -189,7 +198,7 @@ class WalletBot {
       } catch (e) {
         console.error(`❌ Claim ${tk} gagal:`, e.response?.data || e.message);
       }
-      await new Promise(r => setTimeout(r, 3000));
+      await this.delay(this.config.delayMs); 
     }
   }
 
@@ -229,6 +238,7 @@ const runAllBots = async () => {
     console.log(`\n--- Processing account ${i+1}/${keys.length} ---`);
     const bot = new WalletBot(keys[i], globalConfig);
     await bot.runBot();
+    await this.delay(this.config.delayMs);
   }
   console.log('=== All accounts done ===');
 };
