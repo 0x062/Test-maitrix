@@ -238,7 +238,7 @@ const runAllBots = async () => {
     console.log(`\n--- Processing account ${i+1}/${keys.length} ---`);
     const bot = new WalletBot(keys[i], globalConfig);
     await bot.runBot();
-    await this.delay(this.config.delayMs);
+    await bot.delay(bot.config.delayMs);
   }
   console.log('=== All accounts done ===');
 };
