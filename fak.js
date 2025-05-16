@@ -64,17 +64,39 @@ const erc20Abi = [
 
 class WalletBot {
   constructor(key, proxyUrl) {
-    const agent = proxyUrl ? (proxyUrl.startsWith('socks') ? new SocksProxyAgent(proxyUrl) : new HttpsProxyAgent(proxyUrl)) : null;
+    const agent = proxyUrl
+      ? (proxyUrl.startsWith('socks')
+          ? new SocksProxyAgent(proxyUrl)
+          : new HttpsProxyAgent(proxyUrl))
+      : null;
+
     this.provider = agent
-      ? new ethers.providers.JsonRpcProvider({ url: config.rpc, fetch: (u,o) => fetch(u, { agent, ...o }) })
+      ? new ethers.providers.JsonRpcProvider({ url: config.rpc, fetch: (u, o) => fetch(u, { agent, ...o }) })
       : new ethers.providers.JsonRpcProvider(config.rpc);
-    this.http = agent ? axios.create({ httpAgent: agent, httpsAgent: agent, timeout: 10000 }) : axios;
+    this.http = agent
+      ? axios.create({ httpAgent: agent, httpsAgent: agent, timeout: 10000 })
+      : axios;
     this.wallet = new ethers.Wallet(key, this.provider);
     this.address = this.wallet.address;
     console.log(`🟢 Initialized wallet ${this.address}`);
   }
 
-  delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+  delay(ms) {
+    return new Promise(r => setTimeout(r, ms));
+  }
+
+  async logProxyIp() {
+    if (this.http !== axios) {
+      try {
+        const { data } = await this.http.get('https://api.ipify.org?format=json');
+        console.log(`🌐 Using proxy IP: ${data.ip}`);
+      } catch (e) {
+        console.log(`⚠️ Failed to fetch proxy IP: ${e.message}`);
+      }
+    } else {
+      console.log('ℹ️ No proxy used, using direct IP');
+    }
+  }
 
   async getToken(name) {
     const addr = config.tokens[name];
@@ -100,7 +122,7 @@ class WalletBot {
       try {
         await this.http.post(url, { address: this.address });
         console.log(`💧 Faucet claimed: ${url}`);
-      } catch(e) {
+      } catch (e) {
         console.log(`⚠️ Faucet error: ${url}`);
       }
       await this.delay(config.delayMs);
@@ -119,17 +141,18 @@ class WalletBot {
     }
     const tx1 = await contract.approve(router, balance, { gasLimit: config.gasLimit, gasPrice: config.gasPrice });
     console.log(`🔏 Approving ${symbol}: ${tx1.hash}`);
-    await tx1.wait(); await this.delay(config.delayMs);
+    await tx1.wait();
+    await this.delay(config.delayMs);
     const data = method + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
     const tx2 = await this.wallet.sendTransaction({ to: router, data, gasLimit: config.gasLimit, gasPrice: config.gasPrice });
     console.log(`⚡ Swapping ${formatted} ${symbol}: ${tx2.hash}`);
-    await tx2.wait(); await this.delay(config.delayMs);
+    await tx2.wait();
+    await this.delay(config.delayMs);
     console.log(`✅ Swapped ${symbol}`);
   }
 
   async stake(name, overrideAddr) {
     console.log(`-- stake ${name}`);
-    const tokenName = overrideAddr ? name + ' (override)' : name;
     const { contract, balance, formatted, symbol } = await this.getToken(name);
     if (balance.isZero()) {
       console.log(`⚠️ No ${symbol} to stake`);
@@ -138,17 +161,20 @@ class WalletBot {
     const stakeCt = config.stakes[name];
     const tx1 = await contract.approve(stakeCt, balance, { gasLimit: config.gasLimit, gasPrice: config.gasPrice });
     console.log(`🔏 Approving ${symbol}: ${tx1.hash}`);
-    await tx1.wait(); await this.delay(config.delayMs);
+    await tx1.wait();
+    await this.delay(config.delayMs);
     const data = config.methodIds.stake + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
     const tx2 = await this.wallet.sendTransaction({ to: stakeCt, data, gasLimit: config.gasLimit, gasPrice: config.gasPrice });
     console.log(`⚡ Staking ${formatted} ${symbol}: ${tx2.hash}`);
-    await tx2.wait(); await this.delay(config.delayMs);
+    await tx2.wait();
+    await this.delay(config.delayMs);
     console.log(`✅ Staked ${symbol}`);
     await sendReport(formatStakingReport(symbol, formatted, tx2.hash));
   }
 
   async run() {
     console.log(`\n🌟 Run start for ${this.address}`);
+    await this.logProxyIp();
     await this.claimFaucets();
     for (const name of Object.keys(config.routers)) await this.swap(name);
     for (const name of Object.keys(config.stakes)) {
@@ -165,7 +191,8 @@ class WalletBot {
 
 (async () => {
   if (!privateKeys.length) {
-    console.error('❌ No private_keys.txt found'); return;
+    console.error('❌ No private_keys.txt found');
+    return;
   }
   for (const key of privateKeys) {
     const bot = new WalletBot(key, rotatingProxy);
