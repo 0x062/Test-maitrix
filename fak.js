@@ -169,8 +169,7 @@ class WalletBot {
       virtual: 'https://app.x-network.io/maitrix-virtual/faucet',
       vana: 'https://app.x-network.io/maitrix-vana/faucet',
       ai16z: 'https://app.x-network.io/maitrix-ai16z/faucet'
-    };
-    for (const [tk, url] of Object.entries(endpoints)) {
+    };\n    for (const [tk, url] of Object.entries(endpoints)) {
       try {
         const r = await this.http.post(url, { address: this.address });
         console.log(`💧 Faucet ${tk}: ${r.status}`);
@@ -194,7 +193,7 @@ class WalletBot {
     console.log(`\n🌟 Running ${this.address}`);
     await this.checkWalletStatus();
     await this.claimFaucets();
-    for (const name of ['virtual', 'ath', 'ausd', 'usde', 'lvlusd', 'vusd', 'vnusd']) {
+    for (const name of Object.keys(this.cfg.routers)) {
       await this.swapToken(name);
     }
     for (const name of ['ausd', 'usde', 'lvlusd', 'vusd', 'vnusd']) {
