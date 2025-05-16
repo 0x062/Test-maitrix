@@ -99,13 +99,40 @@ class WalletBot {
     return { formatted: ethers.utils.formatEther(w) };
   }
 
-  async swapToken(name) {
+    async swapToken(name) {
     try {
-      const addr = this.config.tokens[name];
-      const router = this.config.routers[name];
-      const { balance, formatted, symbol } = await this.getTokenBalance(addr);
+      const tokenAddr = this.config.tokens[name];
+      const routerAddr = this.config.routers[name];
+      if (!routerAddr) return;
+      const { balance, formatted, symbol } = await this.getTokenBalance(tokenAddr);
       console.log(`↔️ Checking ${symbol}: ${formatted}`);
-      if (balance.isZero()) { console.log(`⚠️ Skip swap ${symbol}, balance = 0`); return; }
+      if (balance.isZero()) {
+        console.log(`⚠️ Skip swap ${symbol}, balance = 0`);
+        return;
+      }
+      console.log(`🔁 Swapping ${formatted} ${symbol}`);
+      const tokenContract = new ethers.Contract(tokenAddr, erc20Abi, this.wallet);
+      const approveTx = await tokenContract.approve(routerAddr, balance, {
+        gasLimit: this.config.gasLimit,
+        gasPrice: this.config.gasPrice
+      });
+      console.log(`   Approve hash: ${approveTx.hash}`);
+      await approveTx.wait();
+      console.log('   ✅ Approved');
+      await this.delay(this.config.delayMs);
+      const swapAbi = [`function ${name}Swap(uint256 amount)`];
+      const swapContract = new ethers.Contract(routerAddr, swapAbi, this.wallet);
+      const swapTx = await swapContract[`${name}Swap`](balance, {
+        gasLimit: this.config.gasLimit,
+        gasPrice: this.config.gasPrice
+      });
+      console.log(`   Swap tx hash: ${swapTx.hash}`);
+      await swapTx.wait();
+      console.log(`✅ Swapped ${formatted} ${symbol}`);
+    } catch (e) {
+      console.error(`❌ swapToken error for ${name}:`, e.message || e);
+    }
+  }
       console.log(`✍️ Approving ${symbol}…`);
       const approveTx = await new ethers.Contract(addr, erc20Abi, this.wallet)
         .approve(router, balance, { gasLimit: this.config.gasLimit, gasPrice: this.config.gasPrice });
@@ -184,27 +211,14 @@ class WalletBot {
     await this.fetchIP();
     await this.checkStatus();
     await this.claimFaucets();
-    for (let t of ['virtual','ath','vnusd']) await this.swapToken(t);
-    for (let n of Object.keys(this.config.stakeContracts)) await this.stakeToken(n, n==='vnusd'? '0x46a6585a0Ad1750d37B4e6810EB59cBDf591Dc30': null);
+    for (const name of Object.keys(this.config.tokens)) {
+      if (this.config.routers[name]) {
+        await this.swapToken(name);
+      } else {
+        await this.stakeToken(name, name === 'vnusd' ? '0x46a6585a0Ad1750d37B4e6810EB59cBDf591Dc30' : null);
+      }
+      await this.delay(this.config.delayMs);
+    }
     await this.checkStatus();
     console.log(`✅ Done ${this.address}`);
-  }
-}
-
-(async()=>{
-  console.log('🚀 Multi-bot start');
-  const keys = getPrivateKeys();
-  if (!keys.length) return console.error('❌ No keys');
-  for (let k of keys) {
-    const bot = new WalletBot(k, globalConfig);
-    await bot.runBot();
-    await bot.delay(globalConfig.delayMs);
-  }
-  console.log('🎉 All done');
-  setInterval(async()=>{
-    for (let k of getPrivateKeys()) {
-      const bot = new WalletBot(k, globalConfig);
-      await bot.runBot();
-    }
-  }, 24*60*60*1000);
-})();
+  }();
