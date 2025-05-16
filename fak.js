@@ -123,7 +123,10 @@ class WalletBot {
       console.error(`❌ [${this.address}] swap ${name} error: ${error.message}`);
     }
   }
-      const { balance, formatted, symbol } = await this.getTokenBalance(this.cfg.tokens[name]);
+      const tokenInfo = await this.getTokenBalance(this.cfg.tokens[name]);
+      const balance = tokenInfo.balance;
+      const formatted = tokenInfo.formatted;
+      const symbol = tokenInfo.symbol;
       if (balance.isZero()) {
         console.log(`⚠️ [${this.address}] Skip swap ${symbol}: balance=0`);
         return;
@@ -146,7 +149,10 @@ class WalletBot {
       console.error(`❌ [${this.address}] swap ${name} error: ${error.message}`);
     }
   }
-      const { balance, formatted, symbol } = await this.getTokenBalance(this.cfg.tokens[name]);
+      const tokenInfo = await this.getTokenBalance(this.cfg.tokens[name]);
+      const balance = tokenInfo.balance;
+      const formatted = tokenInfo.formatted;
+      const symbol = tokenInfo.symbol;
       if (balance.isZero()) {
         console.log(`⚠️ [${this.address}] Skip swap ${symbol}: balance=0`);
         return;
