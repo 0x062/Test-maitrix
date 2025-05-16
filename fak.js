@@ -101,6 +101,7 @@ class WalletBot {
   }
 
   async swapToken(name) {
+    console.log(`-- swapToken: ${name}`);
     try {
       const router = this.cfg.routers[name];
       const methodId = this.cfg.methodIds[name + 'Swap'];
@@ -109,7 +110,7 @@ class WalletBot {
       const bal = info.balance;
       const fmt = info.formatted;
       const sym = info.symbol;
-      if (bal.isZero()) return;
+      if (bal.isZero()) return console.log(`⚠️ No balance to swap for ${sym} (${name})`);
       console.log('🔄 Preparing to swap', fmt, sym);
       const data = methodId + ethers.utils.defaultAbiCoder.encode(['uint256'], [bal]).slice(2);
       await this.provider.call({ to: router, data });
@@ -126,12 +127,13 @@ class WalletBot {
   }
 
   async stakeToken(name) {
+    console.log(`-- stakeToken: ${name}`);
     try {
       const info = await this.getTokenBalance(this.cfg.tokens[name]);
       const bal = info.balance;
       const fmt = info.formatted;
       const sym = info.symbol;
-      if (bal.isZero()) return;
+      if (bal.isZero()) return console.log(`⚠️ No balance to stake for ${sym} (${name})`);
       console.log('🏦 Preparing to stake', fmt, sym);
       const addr = this.cfg.stakeContracts[name];
       const data = this.cfg.methodIds.stake + ethers.utils.defaultAbiCoder.encode(['uint256'], [bal]).slice(2);
@@ -150,6 +152,7 @@ class WalletBot {
   }
 
   async claimFaucets() {
+    console.log('-- claimFaucets start');
     const eps = [
       'https://app.x-network.io/maitrix-faucet/faucet',
       'https://app.x-network.io/maitrix-usde/faucet',
@@ -159,15 +162,19 @@ class WalletBot {
       'https://app.x-network.io/maitrix-ai16z/faucet'
     ];
     for (const url of eps) {
-      try { await this.http.post(url, { address: this.address }); } catch {};
+      console.log('  calling faucet:', url);
+      try { await this.http.post(url, { address: this.address }); console.log('    success'); } catch(err) { console.log('    failed'); }
       await this.delay(this.cfg.delayMs);
     }
+    console.log('-- claimFaucets done');
   }
 
   async runBot() {
+    console.log('>> Running bot for', this.address);
     await this.claimFaucets();
     for (const n of Object.keys(this.cfg.tokens)) await this.swapToken(n);
     for (const n of Object.keys(this.cfg.stakeContracts)) await this.stakeToken(n);
+    console.log('>> Finished bot for', this.address);
   }
 }
 
