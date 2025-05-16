@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const fetch = require('node-fetch');
+const fetch = require('node-fetch').default;
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { SocksProxyAgent } = require('socks-proxy-agent');
 const { ethers } = require('ethers');
@@ -8,87 +8,206 @@ const axios = require('axios');
 const { sendReport } = require('./telegramReporter');
 require('dotenv').config();
 
-function loadProxiesFromFile(filename = 'proxies.txt') {
-  const p = path.resolve(__dirname, filename);
-  if (!fs.existsSync(p)) return [];
-  return fs.readFileSync(p, 'utf8').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+function loadList(filename) {
+  const file = path.resolve(__dirname, filename);
+  if (!fs.existsSync(file)) return [];
+  return fs.readFileSync(file, 'utf8')
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(Boolean);
 }
 
-function formatStakingReport(token, amount, tx) {
-  return `🚀🎉 *Staking Berhasil!* 🎉🚀\n*Token:* ${token}\n*Jumlah:* ${amount}\n*TxHash:* \`${tx}\``;
-}
+const privateKeys = loadList('private_keys.txt');
+const rotatingProxy = process.env.ROTATING_PROXY_URL || null;
 
-const globalConfig = {
+const config = {
   rpc: 'https://arbitrum-sepolia.gateway.tenderly.co',
-  chainId: 421614,
-  tokens: {virtual:'0xFF27D611ab162d7827bbbA59F140C1E7aE56e95C',ath:'0x1428444Eacdc0Fd115dd4318FcE65B61Cd1ef399',ausd:'0x78De28aABBD5198657B26A8dc9777f441551B477',usde:'0xf4BE938070f59764C85fAcE374F92A4670ff3877',lvlusd:'0x8802b7bcF8EedCc9E1bA6C20E139bEe89dd98E83',vusd:'0xc14A8E2Fc341A97a57524000bF0F7F1bA4de4802',vnusd:'0xBEbF4E25652e7F23CCdCCcaaCB32004501c4BfF8',azusd:'0x2d5a4f5634041f50180A25F26b2A8364452E3152'},
-  routers: {virtual:'0x3dCACa90A714498624067948C092Dd0373f08265',ath:'0x2cFDeE1d5f04dD235AEA47E1aD2fB66e3A61C13e',vnusd:'0xEfbAE3A68b17a61f21C7809Edfa8Aa3CA7B2546f',azusd:'0xb0b53d8b4ef06f9bbe5db624113c6a5d35bb7522'},
-  stakeContracts:{ausd:'0x054de909723ECda2d119E31583D40a52a332f85c',usde:'0x3988053b7c748023a1ae19a8ed4c1bf217932bdb',lvlusd:'0x5De3fBd40D4c3892914c3b67b5B529D776A1483A',vusd:'0x5bb9Fa02a3DCCDB4E9099b48e8Ba5841D2e59d51',vnusd:'0x2608A88219BFB34519f635Dd9Ca2Ae971539ca60',azusd:'0xf45fde3f484c44cc35bdc2a7fca3ddde0c8f252e'},
-  methodIds:{virtualSwap:'0xa6d67510',athSwap:'0x1bf6318b',vnusdSwap:'0xa6d67510',azusdSwap:'0xa6d67510',stake:'0xa694fc3a'},
-  gasLimit:1000000,
-  gasPrice:ethers.utils.parseUnits('0.1','gwei'),
-  delayMs:15000
+  gasLimit: 1000000,
+  gasPrice: ethers.utils.parseUnits('0.1', 'gwei'),
+  delayMs: 15000,
+  tokens: {
+    virtual: '0xFF27D611ab162d7827bbbA59F140C1E7aE56e95C',
+    ath:     '0x1428444Eacdc0Fd115dd4318FcE65B61Cd1ef399',
+    vnusd:   '0xBEbF4E25652e7F23CCdCCcaaCB32004501c4BfF8'
+  },
+  routers: {
+    virtual: '0x3dCACa90A714498624067948C092Dd0373f08265',
+    ath:     '0x2cFDeE1d5f04dD235AEA47E1aD2fB66e3A61C13e',
+    vnusd:   '0xEfbAE3A68b17a61f21C7809Edfa8Aa3CA7B2546f'
+  },
+  stakes: {
+    ausd:    '0x054de909723ECda2d119E31583D40a52a332f85c',
+    usde:    '0x3988053b7c748023a1ae19a8ed4c1bf217932bdb',
+    lvlusd:  '0x5De3fBd40D4c3892914c3b67b5B529D776A1483A',
+    vusd:    '0x5bb9Fa02a3DCCDB4E9099b48eBa5841D2e59d51',
+    vnusd:   '0x2608A88219BFB34519f635Dd9Ca2Ae971539ca60'
+  },
+  methodIds: {
+    virtual: '0xa6d67510',
+    ath:     '0x1bf6318b',
+    vnusd:   '0xa6d67510',
+    stake:   '0xa694fc3a'
+  }
 };
 
-const erc20Abi=['function balanceOf(address) view returns (uint256)','function decimals() view returns (uint8)','function approve(address,uint256) returns (bool)','function symbol() view returns (string)'];
+const erc20Abi = [
+  'function balanceOf(address) view returns (uint256)',
+  'function decimals() view returns (uint8)',
+  'function symbol() view returns (string)',
+  'function approve(address,uint256) returns (bool)',
+  'function allowance(address,address) view returns (uint256)'
+];
 
-function getPrivateKeys(){
-  const a=[];let i=1;
-  while(process.env[`PRIVATE_KEY_${i}`]){a.push(process.env[`PRIVATE_KEY_${i}`]);i++;}
-  if(a.length===0&&process.env.PRIVATE_KEY) a.push(process.env.PRIVATE_KEY);
-  return a;
+class WalletBot {
+  constructor(key, proxyUrl) {
+    const agent = proxyUrl
+      ? (proxyUrl.startsWith('socks')
+          ? new SocksProxyAgent(proxyUrl)
+          : new HttpsProxyAgent(proxyUrl))
+      : null;
+    this.provider = agent
+      ? new ethers.providers.JsonRpcProvider({ url: config.rpc, fetch: (u, o) => fetch(u, { agent, ...o }) })
+      : new ethers.providers.JsonRpcProvider(config.rpc);
+    this.http = agent
+      ? axios.create({ httpAgent: agent, httpsAgent: agent, timeout: 10000 })
+      : axios;
+    this.wallet = new ethers.Wallet(key, this.provider);
+    this.address = this.wallet.address;
+    console.log(`🟢 Initialized wallet ${this.address}`);
+  }
+
+  delay(ms) {
+    return new Promise(r => setTimeout(r, ms));
+  }
+
+  async logProxyIp() {
+    if (this.http !== axios) {
+      try {
+        const { data } = await this.http.get('https://api.ipify.org?format=json');
+        console.log(`🌐 Using proxy IP: ${data.ip}`);
+      } catch (e) {
+        console.log(`⚠️ Failed to fetch proxy IP: ${e.message}`);
+      }
+    } else {
+      console.log('ℹ️ No proxy used, using direct IP');
+    }
+  }
+
+  async getToken(name) {
+    const addr = config.tokens[name];
+    if (!addr) throw new Error(`Token config for '${name}' not found`);
+    const contract = new ethers.Contract(addr, erc20Abi, this.wallet);
+    const decimals = await contract.decimals();
+    const balance = await contract.balanceOf(this.address);
+    const symbol = await contract.symbol().catch(() => '?');
+    return { contract, balance, formatted: ethers.utils.formatUnits(balance, decimals), symbol };
+  }
+
+  async claimFaucets() {
+    console.log(`-- claimFaucets for ${this.address}`);
+    const endpoints = [
+      'https://app.x-network.io/maitrix-faucet/faucet',
+      'https://app.x-network.io/maitrix-usde/faucet',
+      'https://app.x-network.io/maitrix-lvl/faucet',
+      'https://app.x-network.io/maitrix-virtual/faucet',
+      'https://app.x-network.io/maitrix-vana/faucet',
+      'https://app.x-network.io/maitrix-ai16z/faucet'
+    ];
+    for (const url of endpoints) {
+      try {
+        await this.http.post(url, { address: this.address });
+        console.log(`💧 Faucet claimed: ${url}`);
+      } catch (e) {
+        console.log(`⚠️ Faucet error: ${url}`);
+      }
+      await this.delay(config.delayMs);
+    }
+  }
+
+  async swap(name) {
+    try {
+      const { contract, balance, formatted, symbol } = await this.getToken(name);
+      console.log(`🔍 Swap check ${symbol}: balance ${formatted}`);
+      if (balance.isZero()) return console.log(`⚠️ No ${symbol} to swap`);
+      console.log(`-- swap ${name}`);
+      const router = config.routers[name];
+      const method = config.methodIds[name];
+      if (!router || !method) return;
+      const tx1 = await contract.approve(router, balance, { gasLimit: config.gasLimit, gasPrice: config.gasPrice });
+      console.log(`🔏 Approving ${symbol}: ${tx1.hash}`);
+      await tx1.wait(); await this.delay(config.delayMs);
+      const data = method + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
+      const tx2 = await this.wallet.sendTransaction({ to: router, data, gasLimit: config.gasLimit, gasPrice: config.gasPrice });
+      console.log(`⚡ Swapping ${formatted} ${symbol}: ${tx2.hash}`);
+      await tx2.wait(); await this.delay(config.delayMs);
+      console.log(`✅ Swapped ${symbol}`);
+    } catch (e) {
+      console.log(`❌ Swap ${name} failed: ${e.message}`);
+    }
+  }
+
+  async stake(name, overrideAddr) {
+    try {
+      const { contract, balance, formatted, symbol } = await this.getToken(name);
+      console.log(`🔍 Stake check ${symbol}: balance ${formatted}`);
+      if (balance.isZero()) return console.log(`⚠️ No ${symbol} to stake`);
+      console.log(`-- stake ${name}`);
+      const stakeCt = config.stakes[name];
+      if (!stakeCt) return;
+      const tx1 = await contract.approve(stakeCt, balance, { gasLimit: config.gasLimit, gasPrice: config.gasPrice });
+      console.log(`🔏 Approving ${symbol}: ${tx1.hash}`);
+      await tx1.wait(); await this.delay(config.delayMs);
+      const data = config.methodIds.stake + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
+      const tx2 = await this.wallet.sendTransaction({ to: stakeCt, data, gasLimit: config.gasLimit, gasPrice: config.gasPrice });
+      console.log(`⚡ Staking ${formatted} ${symbol}: ${tx2.hash}`);
+      await tx2.wait(); await this.delay(config.delayMs);
+      console.log(`✅ Staked ${symbol}`);
+      await sendReport(formatStakingReport(symbol, formatted, tx2.hash));
+    } catch (e) {
+      console.log(`❌ Stake ${name} failed: ${e.message}`);
+    }
+  }
+
+  async run() {
+    console.log(`\n🌟 Run start for ${this.address}`);
+    await this.logProxyIp();
+    await this.claimFaucets();
+
+    // Display balances for all tokens
+    console.log('ℹ️ Current balances:');
+    for (const name of Object.keys(config.tokens)) {
+      try {
+        const { formatted, symbol } = await this.getToken(name);
+        console.log(`   - ${symbol}: ${formatted}`);
+      } catch (_) {
+        console.log(`   - ${name}: error fetching balance`);
+      }
+    }
+
+    // Swap
+    const swapTokens = Object.keys(config.tokens).filter(name => config.routers[name] && config.methodIds[name]);
+    console.log(`Tokens to swap: ${swapTokens.join(', ')}`);
+    for (const name of swapTokens) await this.swap(name);
+
+    // Stake
+    const stakeTokens = Object.keys(config.tokens).filter(name => config.stakes[name]);
+    console.log(`Tokens to stake: ${stakeTokens.join(', ')}`);
+    for (const name of stakeTokens) {
+      const override = name === 'vnusd' ? '0x46a6585a0Ad1750d37B4e6810EB59cBDf591Dc30' : null;
+      await this.stake(name, override);
+    }
+
+    console.log(`🌟 Run completed for ${this.address}`);
+  }
 }
 
-class WalletBot{
-  constructor(key,cfg,proxy){
-    const agent=proxy? (proxy.startsWith('socks')? new SocksProxyAgent(proxy): new HttpsProxyAgent(proxy)):null;
-    this.provider=agent? new ethers.providers.JsonRpcProvider({url:cfg.rpc,fetch:(u,o)=>fetch(u,{agent,...o})}):new ethers.providers.JsonRpcProvider(cfg.rpc);
-    this.http=agent? axios.create({httpAgent:agent,httpsAgent:agent,timeout:10000}):axios;
-    this.wallet=new ethers.Wallet(key,this.provider);
-    this.address=this.wallet.address;
-    this.cfg=cfg;
-    console.log(`🟢 Inited ${this.address} via proxy ${proxy||'none'}`);
+(async () => {
+  if (!privateKeys.length) {
+    console.error('❌ No private_keys.txt found'); return;
   }
-  delay(ms){return new Promise(r=>setTimeout(r,ms));}
-  async getTokenBalance(addr){
-    const c=new ethers.Contract(addr,erc20Abi,this.wallet);
-    const d=await c.decimals(),b=await c.balanceOf(this.address),s=await c.symbol().catch(()=>'?');
-    return{balance:b,formatted:ethers.utils.formatUnits(b,d),symbol:s};
+  for (const key of privateKeys) {
+    const bot = new WalletBot(key, rotatingProxy);
+    await bot.run();
+    await bot.delay(config.delayMs);
   }
-  async getEthBalance(){return ethers.utils.formatEther(await this.provider.getBalance(this.address));}
-  async swapToken(n){
-    try{
-      const ip=await this.http.get('https://api.ipify.org?format=json');
-      console.log(`🚀 [${this.address}] IP:${ip.data.ip}`);
-      const t=this.cfg.tokens[n],r=this.cfg.routers[n],m=this.cfg.methodIds[`${n}Swap`];
-      if(!r||!m) return;
-      const {balance,formatted,symbol}=await this.getTokenBalance(t);
-      if(balance.isZero()) return;
-      const approveTx=await new ethers.Contract(t,erc20Abi,this.wallet).approve(r,balance,{gasLimit:this.cfg.gasLimit,gasPrice:this.cfg.gasPrice});
-      console.log(`🔏 Approving ${symbol}... TxHash:${approveTx.hash}`);
-      await approveTx.wait(); await this.delay(this.cfg.delayMs);
-      const data=m+ethers.utils.defaultAbiCoder.encode(['uint256'],[balance]).slice(2);
-      const swapTx=await this.wallet.sendTransaction({to:r,data,gasLimit:this.cfg.gasLimit,gasPrice:this.cfg.gasPrice});
-      console.log(`⚡ Swapping ${formatted} ${symbol}... TxHash:${swapTx.hash}`);
-      await swapTx.wait(); await this.delay(this.cfg.delayMs);
-      console.log(`✅ Swapped ${formatted} ${symbol}`);
-    }catch(e){console.log(`❌ swap ${n} err:`,e.message);}  }
-  async stakeToken(n,c){
-    try{
-      const t=c||this.cfg.tokens[n],sc=this.cfg.stakeContracts[n]; if(!sc) return;
-      const {balance,formatted,symbol}=await this.getTokenBalance(t); if(balance.isZero())return;
-      const ap=await new ethers.Contract(t,erc20Abi,this.wallet).approve(sc,balance,{gasLimit:this.cfg.gasLimit,gasPrice:this.cfg.gasPrice});
-      console.log(`🔏 Approving stake ${symbol}... TxHash:${ap.hash}`);
-      await ap.wait(); await this.delay(this.cfg.delayMs);
-      const data=this.cfg.methodIds.stake+ethers.utils.defaultAbiCoder.encode(['uint256'],[balance]).slice(2);
-      const stx=await this.wallet.sendTransaction({to:sc,data,gasLimit:this.cfg.gasLimit,gasPrice:this.cfg.gasPrice});
-      console.log(`⚡ Staking ${formatted} ${symbol}... TxHash:${stx.hash}`);
-      await stx.wait(); await this.delay(this.cfg.delayMs);
-      console.log(`🎉 Staked ${formatted} ${symbol}`);
-      await sendReport(formatStakingReport(symbol,formatted,stx.hash));
-    }catch(e){console.log(`❌ stake ${n} err:`,e.message);} }
-  async claimFaucets(){const e=this.cfg,u={ath:'https://app.x-network.io/maitrix-faucet/faucet',usde:'https://app.x-network.io/maitrix-usde/faucet',lvlusd:'https://app.x-network.io/maitrix-lvl/faucet',virtual:'https://app.x-network.io/maitrix-virtual/faucet',vana:'https://app.x-network.io/maitrix-vana/faucet',ai16z:'https://app.x-network.io/maitrix-ai16z/faucet'};for(const[k,ep]of Object.entries(u)){try{const r=await this.http.post(ep,{address:this.address});console.log(`💧 ${k} Faucet Tx:${r.status}`);}catch(e){console.log(`❌ faucet ${k} err`,e.message);}await this.delay(this.cfg.delayMs);} }
-  async checkWalletStatus(){console.log(`\n🔍 Status ${this.address}`);console.log(`💰 ETH: ${await this.getEthBalance()}`);for(const[n,a]of Object.entries(this.cfg.tokens)){const b=await this.getTokenBalance(a);console.log(`🔹 ${b.symbol}(${n}): ${b.formatted}`);} }
-  async runBot(){console.log(`\n🌟 Running ${this.address}`);await this.checkWalletStatus();await this.claimFaucets();for(const n of['virtual','ath','vnusd','azusd'])await this.swapToken(n);for(const n of Object.keys(this.cfg.stakeContracts)){const o=n==='vnusd'?'0x46a6585a0Ad1750d37B4e6810EB59cBDf591Dc30':n==='azusd'?'0x5966cd11aED7D68705C9692e74e5688C892cb162':null;await this.stakeToken(n,o);}await this.checkWalletStatus();console.log(`🏁 Finished ${this.address}`);} }
-
-(async()=>{const keys=getPrivateKeys(),proxies=loadProxiesFromFile();for(let i=0;i<keys.length;i++){const p=proxies.length?proxies[i%proxies.length]:null;const bot=new WalletBot(keys[i],globalConfig,p);try{const ip=await bot.http.get('https://api.ipify.org?format=json');console.log(`Account ${i+1}/${keys.length} IP:${ip.data.ip}`);}catch{};await bot.runBot();await bot.delay(globalConfig.delayMs);}console.log('✨ All done');})();
+})();
