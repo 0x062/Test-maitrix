@@ -109,11 +109,6 @@ class WalletBot {
     return { balance, formatted: ethers.utils.formatUnits(balance, decimals), symbol, contract };
   }
 
-  async getEthBalance() {
-    const balance = await this.provider.getBalance(this.address);
-    return ethers.utils.formatEther(balance);
-  }
-
   async swapToken(name) {
     try {
       const { balance, formatted, symbol } = await this.getTokenBalance(this.cfg.tokens[name]);
@@ -128,7 +123,9 @@ class WalletBot {
 
       await this.provider.call({ to: router, data: payload });
 
-      const approveTx = await new ethers.Contract(this.cfg.tokens[name], erc20Abi, this.wallet)
+      const approveTx = await this.getTokenBalance(this.cfg.tokens[name])
+        .then(t => t.contract);
+      await new ethers.Contract(this.cfg.tokens[name], erc20Abi, this.wallet)
         .approve(router, balance, { gasLimit: this.cfg.gasLimit, gasPrice: this.cfg.gasPrice });
       console.log(`🔏 Approving ${symbol}: ${approveTx.hash}`);
       await approveTx.wait();
@@ -186,10 +183,47 @@ class WalletBot {
       vana:    'https://app.x-network.io/maitrix-vana/faucet',
       ai16z:   'https://app.x-network.io/maitrix-ai16z/faucet'
     };
-
     for (const [tk, url] of Object.entries(endpoints)) {
       try {
         const res = await this.http.post(url, { address: this.address });
         console.log(`💧 [${this.address}] Claimed faucet ${tk}: HTTP ${res.status}`);
       } catch (e) {
-        console.log(`
+        console.log(`❌ [${this.address}] Faucet ${tk} error: ${e.message}`);
+      }
+      await this.delay(this.cfg.delayMs);
+    }
+  }
+
+  async runBot() {
+    await this.claimFaucets();
+    for (const name of Object.keys(this.cfg.tokens)) {
+      await this.swapToken(name);
+    }
+    for (const name of Object.keys(this.cfg.stakeContracts)) {
+      await this.stakeToken(name);
+    }
+  }
+}
+
+(async function main() {
+  const keys = getPrivateKeys();
+  console.log(`🔑 Found ${keys.length} private key(s)`);
+  if (keys.length === 0) {
+    console.error('❌ No private keys found. Please set PRIVATE_KEY or PRIVATE_KEY_1 in your .env file');
+    return;
+  }
+  const proxies = loadProxiesFromFile();
+  console.log(`🛡️ Loaded ${proxies.length} proxy entries`);
+  for (let i = 0; i < keys.length; i++) {
+    const proxy = proxies.length ? proxies[i % proxies.length] : null;
+    console.log(`🚀 Starting bot for account ${i + 1}`);
+    const bot = new WalletBot(keys[i], globalConfig, proxy);
+    try {
+      const ip = await bot.http.get('https://api.ipify.org?format=json');
+      console.log(`🌐 Account ${i + 1}/${keys.length} IP: ${ip.data.ip}`);
+    } catch {}
+    await bot.runBot();
+    await bot.delay(globalConfig.delayMs);
+  }
+  console.log('✨ All done');
+})();
