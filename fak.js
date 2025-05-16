@@ -175,29 +175,4 @@ class WalletBot {
         const res = await this.http.post(url, { address: this.address });
         console.log(`💧 [${this.address}] Claimed faucet ${tk}: HTTP ${res.status}`);
       } catch (e) {
-        console.log(`❌ [${this.address}] Faucet ${tk} error: ${e.message}`);
-      }
-      await this.delay(this.cfg.delayMs);
-    }
-  }
-
-  async runBot() {
-    await this.claimFaucets();
-    for (const name of Object.keys(this.cfg.tokens)) await this.swapToken(name);
-    for (const name of Object.keys(this.cfg.stakeContracts)) await this.stakeToken(name);
-  }
-}
-
-(async function main() {
-  const keys = loadPrivateKeysFromFile();
-  console.log(`🔑 Loaded ${keys.length} private key(s) from file`);
-  if (keys.length === 0) return;
-  const proxies = loadProxiesFromFile();
-  console.log(`🛡️ Loaded ${proxies.length} proxy entries`);
-
-  for (let i = 0; i < keys.length; i++) {
-    console.log(`🚀 Starting bot for account ${i + 1}`);
-    const proxy = proxies[i % proxies.length] || null;
-    const bot = new WalletBot(keys[i], globalConfig, proxy);
-    try {
-      const ip = await bot.http.get('https://api.ipify.org?format=json');
+        console.log(`❌ [${this.address}] Faucet ${
