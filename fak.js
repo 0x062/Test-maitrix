@@ -63,10 +63,16 @@ const rotatingProxy = process.env.ROTATING_PROXY_URL || null;
     await sendReport(formatStakingReport(symbol, formatted, tx2.hash));
   }
 
-  async run() {
-    console.log(`\n🌟 Processing ${this.address}`);
+    async run() {
+    console.log(`
+🌟 Processing ${this.address}`);
+    // Re-add faucet claims
     await this.claimFaucets();
-    for (const name of Object.keys(config.routers)) await this.swap(name);
+    // Perform swaps for configured tokens
+    for (const name of Object.keys(config.routers)) {
+      await this.swap(name);
+    }
+    // Perform stakes for configured contracts
     for (const name of Object.keys(config.stakes)) {
       const override = name === 'vnusd'
         ? '0x46a6585a0Ad1750d37B4e6810EB59cBDf591Dc30'
@@ -75,6 +81,7 @@ const rotatingProxy = process.env.ROTATING_PROXY_URL || null;
           : null;
       await this.stake(name, override);
     }
+  }
   }
 }
 
