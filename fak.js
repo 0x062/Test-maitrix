@@ -77,9 +77,7 @@ class WalletBot {
     console.log(`🟢 Initialized wallet ${this.address}`);
   }
 
-  delay(ms) {
-    return new Promise(r => setTimeout(r, ms));
-  }
+  delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
   async logProxyIp() {
     if (this.http !== axios) {
@@ -96,6 +94,7 @@ class WalletBot {
 
   async getToken(name) {
     const addr = config.tokens[name];
+    if (!addr) throw new Error(`Token config for '${name}' not found`);
     const contract = new ethers.Contract(addr, erc20Abi, this.wallet);
     const decimals = await contract.decimals();
     const balance = await contract.balanceOf(this.address);
@@ -126,44 +125,36 @@ class WalletBot {
   }
 
   async swap(name) {
+    if (!config.tokens[name]) return;
     const router = config.routers[name];
     const method = config.methodIds[name];
     if (!router || !method) return;
     console.log(`-- swap ${name}`);
     const { contract, balance, formatted, symbol } = await this.getToken(name);
-    if (balance.isZero()) {
-      console.log(`⚠️ No ${symbol} to swap`);
-      return;
-    }
+    if (balance.isZero()) return console.log(`⚠️ No ${symbol} to swap`);
     const tx1 = await contract.approve(router, balance, { gasLimit: config.gasLimit, gasPrice: config.gasPrice });
     console.log(`🔏 Approving ${symbol}: ${tx1.hash}`);
-    await tx1.wait();
-    await this.delay(config.delayMs);
+    await tx1.wait(); await this.delay(config.delayMs);
     const data = method + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
     const tx2 = await this.wallet.sendTransaction({ to: router, data, gasLimit: config.gasLimit, gasPrice: config.gasPrice });
     console.log(`⚡ Swapping ${formatted} ${symbol}: ${tx2.hash}`);
-    await tx2.wait();
-    await this.delay(config.delayMs);
+    await tx2.wait(); await this.delay(config.delayMs);
     console.log(`✅ Swapped ${symbol}`);
   }
 
   async stake(name, overrideAddr) {
+    if (!config.tokens[name]) return;
     console.log(`-- stake ${name}`);
     const { contract, balance, formatted, symbol } = await this.getToken(name);
-    if (balance.isZero()) {
-      console.log(`⚠️ No ${symbol} to stake`);
-      return;
-    }
+    if (balance.isZero()) return console.log(`⚠️ No ${symbol} to stake`);
     const stakeCt = config.stakes[name];
     const tx1 = await contract.approve(stakeCt, balance, { gasLimit: config.gasLimit, gasPrice: config.gasPrice });
     console.log(`🔏 Approving ${symbol}: ${tx1.hash}`);
-    await tx1.wait();
-    await this.delay(config.delayMs);
+    await tx1.wait(); await this.delay(config.delayMs);
     const data = config.methodIds.stake + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
     const tx2 = await this.wallet.sendTransaction({ to: stakeCt, data, gasLimit: config.gasLimit, gasPrice: config.gasPrice });
     console.log(`⚡ Staking ${formatted} ${symbol}: ${tx2.hash}`);
-    await tx2.wait();
-    await this.delay(config.delayMs);
+    await tx2.wait(); await this.delay(config.delayMs);
     console.log(`✅ Staked ${symbol}`);
     await sendReport(formatStakingReport(symbol, formatted, tx2.hash));
   }
@@ -172,11 +163,11 @@ class WalletBot {
     console.log(`\n🌟 Run start for ${this.address}`);
     await this.logProxyIp();
     await this.claimFaucets();
-    for (const name of Object.keys(config.routers)) await this.swap(name);
+    for (const name of Object.keys(config.routers)) {
+      await this.swap(name);
+    }
     for (const name of Object.keys(config.stakes)) {
-      const override = name === 'vnusd'
-        ? '0x46a6585a0Ad1750d37B4e6810EB59cBDf591Dc30'
-        : null;
+      const override = name === 'vnusd' ? '0x46a6585a0Ad1750d37B4e6810EB59cBDf591Dc30' : null;
       await this.stake(name, override);
     }
     console.log(`🌟 Run completed for ${this.address}`);
@@ -185,8 +176,7 @@ class WalletBot {
 
 (async () => {
   if (!privateKeys.length) {
-    console.error('❌ No private_keys.txt found');
-    return;
+    console.error('❌ No private_keys.txt found'); return;
   }
   for (const key of privateKeys) {
     const bot = new WalletBot(key, rotatingProxy);
