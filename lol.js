@@ -28,7 +28,8 @@ const config = {
   tokens: {
     virtual: '0xFF27D611ab162d7827bbbA59F140C1E7aE56e95C',
     ath:     '0x1428444Eacdc0Fd115dd4318FcE65B61Cd1ef399',
-    vnusd:   '0xBEbF4E25652e7F23CCdCCcaaCB32004501c4BfF8'
+    vnusd:   '0xBEbF4E25652e7F23CCdCCcaaCB32004501c4BfF8',
+    // Tambahkan alamat token lain jika perlu
   },
   routers: {
     virtual: '0x3dCACa90A714498624067948C092Dd0373f08265',
@@ -55,7 +56,6 @@ const erc20Abi = [
   'function decimals() view returns (uint8)',
   'function symbol() view returns (string)',
   'function approve(address,uint256) returns (bool)',
-  'function allowance(address,address) view returns (uint256)'
 ];
 
 class WalletBot {
@@ -76,18 +76,12 @@ class WalletBot {
     console.log(`🟢 Initialized wallet ${this.address}`);
   }
 
-  delay(ms) {
-    return new Promise(r => setTimeout(r, ms));
-  }
+  delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
   async logProxyIp() {
     if (this.http !== axios) {
-      try {
-        const { data } = await this.http.get('https://api.ipify.org?format=json');
-        console.log(`🌐 Using proxy IP: ${data.ip}`);
-      } catch (e) {
-        console.log(`⚠️ Failed to fetch proxy IP: ${e.message}`);
-      }
+      try { const { data } = await this.http.get('https://api.ipify.org?format=json'); console.log(`🌐 Using proxy IP: ${data.ip}`); }
+      catch (e) { console.log(`⚠️ Failed to fetch proxy IP: ${e.message}`); }
     } else {
       console.log('ℹ️ No proxy used, using direct IP');
     }
@@ -99,7 +93,7 @@ class WalletBot {
     const contract = new ethers.Contract(addr, erc20Abi, this.wallet);
     const decimals = await contract.decimals();
     const balance = await contract.balanceOf(this.address);
-    const symbol = await contract.symbol().catch(() => '?');
+    const symbol = await contract.symbol().catch(() => name);
     return { contract, balance, formatted: ethers.utils.formatUnits(balance, decimals), symbol };
   }
 
@@ -114,12 +108,8 @@ class WalletBot {
       'https://app.x-network.io/maitrix-ai16z/faucet'
     ];
     for (const url of endpoints) {
-      try {
-        await this.http.post(url, { address: this.address });
-        console.log(`💧 Faucet claimed: ${url}`);
-      } catch (e) {
-        console.log(`⚠️ Faucet error: ${url}`);
-      }
+      try { await this.http.post(url, { address: this.address }); console.log(`💧 Faucet claimed: ${url}`); }
+      catch (e) { console.log(`⚠️ Faucet error: ${url}`); }
       await this.delay(config.delayMs);
     }
   }
@@ -130,9 +120,7 @@ class WalletBot {
       console.log(`🔍 Swap check ${symbol}: balance ${formatted}`);
       if (balance.isZero()) return console.log(`⚠️ No ${symbol} to swap`);
       console.log(`-- swap ${name}`);
-      const router = config.routers[name];
-      const method = config.methodIds[name];
-      if (!router || !method) return;
+      const router = config.routers[name], method = config.methodIds[name];
       const tx1 = await contract.approve(router, balance, { gasLimit: config.gasLimit, gasPrice: config.gasPrice });
       console.log(`🔏 Approving ${symbol}: ${tx1.hash}`);
       await tx1.wait(); await this.delay(config.delayMs);
@@ -141,9 +129,7 @@ class WalletBot {
       console.log(`⚡ Swapping ${formatted} ${symbol}: ${tx2.hash}`);
       await tx2.wait(); await this.delay(config.delayMs);
       console.log(`✅ Swapped ${symbol}`);
-    } catch (e) {
-      console.log(`❌ Swap ${name} failed: ${e.message}`);
-    }
+    } catch (e) { console.log(`❌ Swap ${name} failed: ${e.message}`); }
   }
 
   async stake(name, overrideAddr) {
@@ -153,7 +139,6 @@ class WalletBot {
       if (balance.isZero()) return console.log(`⚠️ No ${symbol} to stake`);
       console.log(`-- stake ${name}`);
       const stakeCt = config.stakes[name];
-      if (!stakeCt) return;
       const tx1 = await contract.approve(stakeCt, balance, { gasLimit: config.gasLimit, gasPrice: config.gasPrice });
       console.log(`🔏 Approving ${symbol}: ${tx1.hash}`);
       await tx1.wait(); await this.delay(config.delayMs);
@@ -163,9 +148,7 @@ class WalletBot {
       await tx2.wait(); await this.delay(config.delayMs);
       console.log(`✅ Staked ${symbol}`);
       await sendReport(formatStakingReport(symbol, formatted, tx2.hash));
-    } catch (e) {
-      console.log(`❌ Stake ${name} failed: ${e.message}`);
-    }
+    } catch (e) { console.log(`❌ Stake ${name} failed: ${e.message}`); }
   }
 
   async run() {
@@ -173,28 +156,39 @@ class WalletBot {
     await this.logProxyIp();
     await this.claimFaucets();
 
-    // Display balances for all tokens
-    console.log('ℹ️ Current balances:');
-    for (const name of Object.keys(config.tokens)) {
+    // Swap tokens
+    const swapTokens = Object.keys(config.tokens).filter(name => config.routers[name] && config.methodIds[name]);
+    console.log('ℹ️ Balances for swapable tokens:');
+    for (const name of swapTokens) {
       try {
         const { formatted, symbol } = await this.getToken(name);
         console.log(`   - ${symbol}: ${formatted}`);
-      } catch (_) {
+      } catch {
         console.log(`   - ${name}: error fetching balance`);
       }
     }
-
-    // Swap
-    const swapTokens = Object.keys(config.tokens).filter(name => config.routers[name] && config.methodIds[name]);
     console.log(`Tokens to swap: ${swapTokens.join(', ')}`);
     for (const name of swapTokens) await this.swap(name);
 
-    // Stake
-    const stakeTokens = Object.keys(config.tokens).filter(name => config.stakes[name]);
+    // Stake tokens
+    const stakeTokens = Object.keys(config.stakes);
+    console.log('ℹ️ Balances for stakeable tokens:');
+    for (const name of stakeTokens) {
+      if (config.tokens[name]) {
+        try {
+          const { formatted, symbol } = await this.getToken(name);
+          console.log(`   - ${symbol}: ${formatted}`);
+        } catch {
+          console.log(`   - ${name}: error fetching balance`);
+        }
+      } else {
+        console.log(`   - ${name}: token address not configured`);
+      }
+    }
     console.log(`Tokens to stake: ${stakeTokens.join(', ')}`);
     for (const name of stakeTokens) {
       const override = name === 'vnusd' ? '0x46a6585a0Ad1750d37B4e6810EB59cBDf591Dc30' : null;
-      await this.stake(name, override);
+      if (config.tokens[name]) await this.stake(name, override);
     }
 
     console.log(`🌟 Run completed for ${this.address}`);
@@ -202,9 +196,7 @@ class WalletBot {
 }
 
 (async () => {
-  if (!privateKeys.length) {
-    console.error('❌ No private_keys.txt found'); return;
-  }
+  if (!privateKeys.length) { console.error('❌ No private_keys.txt found'); return; }
   for (const key of privateKeys) {
     const bot = new WalletBot(key, rotatingProxy);
     await bot.run();
