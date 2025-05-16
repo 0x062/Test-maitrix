@@ -5,7 +5,8 @@ const axios = require('axios');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 require('dotenv').config();
 
-// Setup proxy if provided\const proxyUrl = process.env.PROXY_URL;
+// Setup proxy if provided
+const proxyUrl = process.env.PROXY_URL;
 const proxyAgent = proxyUrl ? new HttpsProxyAgent(proxyUrl) : null;
 if (proxyAgent) {
   axios.defaults.proxy = false;
@@ -135,7 +136,7 @@ class WalletBot {
     } catch {}
 
     // Approve
-    let approveTx = await tokenContract.approve(routerAddr, raw, { gasLimit: this.config.gasLimit, gasPrice: this.config.gasPrice });
+    const approveTx = await tokenContract.approve(routerAddr, raw, { gasLimit: this.config.gasLimit, gasPrice: this.config.gasPrice });
     console.log(`   Approve hash: ${approveTx.hash}`);
     await approveTx.wait();
     console.log('   ✅ Approved');
