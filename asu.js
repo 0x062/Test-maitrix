@@ -54,47 +54,61 @@ const CONFIG = {
 };
 
 class DexBot {
-  constructor(privateKey, proxies) {
+  constructor(privateKey, proxy) {
     this.privateKey = privateKey;
-    this.proxies = proxies;
     this.provider = new ethers.providers.JsonRpcProvider(CONFIG.RPC);
     this.wallet = new ethers.Wallet(privateKey, this.provider);
-    this.currentProxy = this.getRandomProxy();
+    
+    // Handle single proxy
+    this.proxy = this.parseProxy(proxy);
   }
 
-  getRandomProxy() {
-    const proxy = this.proxies[Math.floor(Math.random() * this.proxies.length)];
-    const [host, port] = proxy.split(':');
-    return { host, port };
+  parseProxy(proxyString) {
+    if (!proxyString) return null;
+    const parts = proxyString.split('@');
+    let [host, port] = parts[parts.length-1].split(':');
+    
+    return {
+      host: host.trim(),
+      port: parseInt(port.trim()),
+      auth: parts.length > 1 ? {
+        username: parts[0].split(':')[0],
+        password: parts[0].split(':')[1]
+      } : null
+    };
   }
 
-  async showProxyIP() {
+  async verifyProxy() {
     try {
       const response = await axios.get('https://api.ipify.org?format=json', {
-        proxy: {
-          host: this.currentProxy.host,
-          port: this.currentProxy.port
-        }
+        proxy: this.proxy,
+        timeout: 10000
       });
-      console.log(`Using Proxy IP: ${response.data.ip}`);
+      console.log(`✅ Proxy Active | IP: ${response.data.ip}`);
+      return true;
     } catch (e) {
-      console.log('Failed to get proxy IP');
+      console.log('❌ Proxy verification failed:', e.message);
+      return false;
     }
   }
 
   async httpRequest(url, data) {
-    try {
-      await this.showProxyIP();
-      return await axios.post(url, data, {
-        proxy: {
-          host: this.currentProxy.host,
-          port: this.currentProxy.port
-        },
-        timeout: 15000
-      });
-    } catch (e) {
-      this.currentProxy = this.getRandomProxy();
-      throw e;
+    if (!this.proxy) throw new Error('No proxy configured');
+    
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const config = {
+          proxy: this.proxy,
+          timeout: 15000
+        };
+        
+        console.log(`🔧 Attempt ${attempt} using proxy: ${this.proxy.host}:${this.proxy.port}`);
+        return await axios.post(url, data, config);
+      } catch (e) {
+        console.log(`⚠️ Proxy error (attempt ${attempt}): ${e.message}`);
+        if (attempt === 3) throw e;
+        await delay(5000);
+      }
     }
   }
 
@@ -103,6 +117,7 @@ class DexBot {
       try {
         return await fn();
       } catch (e) {
+        console.log(`[${operationName}] Attempt ${attempt} failed: ${e.message}`);
         if (attempt === CONFIG.RETRY.MAX_ATTEMPTS) throw e;
         await delay(CONFIG.RETRY.DELAY);
       }
@@ -110,9 +125,12 @@ class DexBot {
   }
 
   async claimFaucets() {
+    if (!await this.verifyProxy()) return;
+    
     for (const [token, url] of Object.entries(CONFIG.FAUCETS)) {
       await this.withRetry(async () => {
         await this.httpRequest(url, { address: this.wallet.address });
+        console.log(`✅ Claimed ${token} faucet`);
       }, `faucet-${token}`);
       await delay(CONFIG.GAS.DELAY);
     }
@@ -128,11 +146,7 @@ class DexBot {
       const balance = await contract.balanceOf(this.wallet.address);
       if (balance.isZero()) throw new Error('Zero balance');
       
-      const approveTx = await contract.approve(router, balance, {
-        gasLimit: CONFIG.GAS.LIMIT,
-        maxFeePerGas: CONFIG.GAS.MAX_FEE,
-        maxPriorityFeePerGas: CONFIG.GAS.MAX_PRIORITY
-      });
+      const approveTx = await contract.approve(router, balance, CONFIG.GAS);
       await approveTx.wait();
 
       const txData = methodId + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
@@ -142,6 +156,7 @@ class DexBot {
         ...CONFIG.GAS
       });
       await tx.wait();
+      console.log(`🔄 Swapped ${tokenName}`);
     }, `swap-${tokenName}`);
   }
 
@@ -153,11 +168,7 @@ class DexBot {
       const balance = await contract.balanceOf(this.wallet.address);
       if (balance.isZero()) throw new Error('Zero balance');
       
-      const approveTx = await contract.approve(stakeContract, balance, {
-        gasLimit: CONFIG.GAS.LIMIT,
-        maxFeePerGas: CONFIG.GAS.MAX_FEE,
-        maxPriorityFeePerGas: CONFIG.GAS.MAX_PRIORITY
-      });
+      const approveTx = await contract.approve(stakeContract, balance, CONFIG.GAS);
       await approveTx.wait();
 
       const txData = CONFIG.METHODS.stake + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
@@ -167,15 +178,16 @@ class DexBot {
         ...CONFIG.GAS
       });
       await tx.wait();
+      console.log(`🔒 Staked ${tokenName}`);
     }, `stake-${tokenName}`);
   }
 
   async run() {
-    console.log(`\nAddress: ${this.wallet.address.slice(0,8)}...`);
+    console.log(`\n🔷 Starting ${this.wallet.address.slice(0,8)}...`);
     
     try {
       const ethBalance = await this.provider.getBalance(this.wallet.address);
-      console.log(`ETH Balance: ${ethers.utils.formatEther(ethBalance)}`);
+      console.log(`💎 ETH Balance: ${ethers.utils.formatEther(ethBalance)}`);
 
       await this.claimFaucets();
 
@@ -190,16 +202,14 @@ class DexBot {
       }
 
     } catch (e) {
-      await sendReport(`Error: ${e.message}`);
+      await sendReport(`❌ Error: ${e.message}`);
     }
   }
 }
 
 const erc20Abi = [
   'function balanceOf(address) view returns (uint)',
-  'function approve(address, uint) returns (bool)',
-  'function decimals() view returns (uint8)',
-  'function symbol() view returns (string)'
+  'function approve(address, uint) returns (bool)'
 ];
 
 function delay(ms) {
@@ -207,19 +217,19 @@ function delay(ms) {
 }
 
 async function main() {
-  const proxies = fs.readFileSync('proxies.txt', 'utf-8').split('\n').filter(p => p.trim());
-  const keys = [];
+  const proxy = fs.readFileSync('proxies.txt', 'utf-8').trim();
+  const keys = process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [];
+  
   let idx = 1;
   while (process.env[`PRIVATE_KEY_${idx}`]) {
     keys.push(process.env[`PRIVATE_KEY_${idx}`]);
     idx++;
   }
-  if (process.env.PRIVATE_KEY) keys.push(process.env.PRIVATE_KEY);
 
-  for (const [index, key] of keys.entries()) {
-    const bot = new DexBot(key, proxies);
+  for (const key of keys) {
+    const bot = new DexBot(key, proxy);
     await bot.run();
-    if (index < keys.length - 1) await delay(30000);
+    if (keys.length > 1) await delay(30000);
   }
 }
 
