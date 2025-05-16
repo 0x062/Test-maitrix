@@ -55,7 +55,7 @@ const globalConfig = {
     usde:   '0x3988053b7c748023a1ae19a8ed4c1bf217932bdb',
     lvlusd: '0x5De3fBd40D4c3892914c3b67b5B529D776A1483A',
     vusd:   '0x5bb9Fa02a3DCCDB4E9099b48e8Ba5841D2e59d51',
-    vnusd:  '0x2608A88219BFB34519f635Dd9Ca2Ae971539ca60'
+    hnusd:  '0x2608A88219BFB34519f635Dd9Ca2Ae971539ca60'
   },
   methodIds: {
     virtualSwap: '0xa6d67510',
@@ -108,36 +108,63 @@ class WalletBot {
     return { balance, formatted: ethers.utils.formatUnits(balance, decimals), symbol, contract };
   }
 
-  async swapToken(name) { /* swapToken code... */ }
-  async stakeToken(name) { /* stakeToken code... */ }
-  async claimFaucets() { /* claimFaucets code... */ }
-
-  async runBot() {
-    await this.claimFaucets();
-    for (const name of Object.keys(this.cfg.tokens)) await this.swapToken(name);
-    for (const name of Object.keys(this.cfg.stakeContracts)) await this.stakeToken(name);
-  }
-}
-
-(async function main() {
-  const keys = loadPrivateKeysFromFile();
-  console.log(`🔑 Loaded ${keys.length} private key(s) from file`);
-  if (keys.length === 0) return;
-  const proxies = loadProxiesFromFile();
-  console.log(`🛡️ Loaded ${proxies.length} proxy entries`);
-
-  for (let i = 0; i < keys.length; i++) {
-    console.log(`🚀 Starting bot for account ${i + 1}`);
-    const proxy = proxies[i % proxies.length] || null;
-    const bot = new WalletBot(keys[i], globalConfig, proxy);
+  async swapToken(name) {
     try {
-      const ip = await bot.http.get('https://api.ipify.org?format=json');
-      console.log(`🌐 Account ${i + 1} IP: ${ip.data.ip}`);
-    } catch {}
-
-    await bot.runBot();
-    await bot.delay(globalConfig.delayMs);
+      const { balance, formatted, symbol } = await this.getTokenBalance(this.cfg.tokens[name]);
+      if (balance.isZero()) {
+        console.log(`⚠️ [${this.address}] Skip swap ${symbol}: balance=0`);
+        return;
+      }
+      const router = this.cfg.routers[name];
+      const methodId = this.cfg.methodIds[`${name}Swap`];
+      const payload = methodId + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
+      await this.provider.call({ to: router, data: payload });
+      const approveTx = await new ethers.Contract(this.cfg.tokens[name], erc20Abi, this.wallet)
+        .approve(router, balance, { gasLimit: this.cfg.gasLimit, gasPrice: this.cfg.gasPrice });
+      console.log(`🔏 Approving ${symbol}: ${approveTx.hash}`);
+      await approveTx.wait();
+      await this.delay(this.cfg.delayMs);
+      const swapTx = await this.wallet.sendTransaction({ to: router, data: payload, gasLimit: this.cfg.gasLimit, gasPrice: this.cfg.gasPrice });
+      console.log(`⚡ Swapping ${formatted} ${symbol}: ${swapTx.hash}`);
+      await swapTx.wait();
+      await this.delay(this.cfg.delayMs);
+      console.log(`✅ Swapped ${formatted} ${symbol}`);
+    } catch (e) {
+      console.error(`❌ swap ${name} error:`, e.message);
+    }
   }
 
-  console.log('✨ All done');
-})();
+  async stakeToken(name) {
+    try {
+      const { balance, formatted, symbol } = await this.getTokenBalance(this.cfg.tokens[name]);
+      if (balance.isZero()) {
+        console.log(`⚠️ [${this.address}] Skip stake ${symbol}: balance=0`);
+        return;
+      }
+      const contractAddr = this.cfg.stakeContracts[name];
+      const methodId = this.cfg.methodIds.stake;
+      const payload = methodId + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
+      await this.provider.call({ to: contractAddr, data: payload });
+      const approveTx = await new ethers.Contract(this.cfg.tokens[name], erc20Abi, this.wallet)
+        .approve(contractAddr, balance, { gasLimit: this.cfg.gasLimit, gasPrice: this.cfg.gasPrice });
+      console.log(`🔏 Approving ${symbol} for stake: ${approveTx.hash}`);
+      await approveTx.wait();
+      await this.delay(this.cfg.delayMs);
+      const tx = await this.wallet.sendTransaction({ to: contractAddr, data: payload, gasLimit: this.cfg.gasLimit, gasPrice: this.cfg.gasPrice });
+      console.log(`🏦 Staking ${formatted} ${symbol}: ${tx.hash}`);
+      await tx.wait();
+      await this.delay(this.cfg.delayMs);
+      console.log(`✅ Staked ${formatted} ${symbol}`);
+      await sendReport(formatStakingReport(symbol, formatted, tx.hash));
+    } catch (e) {
+      console.error(`❌ stake ${name} error:`, e.message);
+    }
+  }
+
+  async claimFaucets() {
+    const endpoints = {
+      ath:     'https://app.x-network.io/maitrix-faucet/faucet',
+      usde:    'https://app.x-network.io/maitrix-usde/faucet',
+      lvlusd:  'https://app.x-network.io/maitrix-lvl/faucet',
+      virtual: 'https://app.x-network.io/maitrix-virtual/faucet',
+      vana:    'https://app.x-network.io/maitrix-vana/fapi`
