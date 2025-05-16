@@ -18,8 +18,7 @@ function loadList(filename) {
 }
 
 const privateKeys = loadList('private_keys.txt');
-const rotatingProxy = process.env.ROTATING_PROXY_URL || null;
-
+const proxyList = loadList('proxies.txt'); // Daftar proxy per akun, satu per baris
 const config = {
   rpc: 'https://arbitrum-sepolia.gateway.tenderly.co',
   gasLimit: 1000000,
@@ -78,10 +77,24 @@ class WalletBot {
       : axios;
     this.wallet = new ethers.Wallet(key, this.provider);
     this.address = this.wallet.address;
-    console.log(`🟢 Initialized wallet ${this.address}`);
+    console.log(`\n🟢 Initialized wallet ${this.address}`);
+    if (proxyUrl) console.log(`🌐 Proxy for this account: ${proxyUrl}`);
   }
 
   delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+  async logProxyIp() {
+    if (this.http !== axios) {
+      try {
+        const { data } = await this.http.get('https://api.ipify.org?format=json');
+        console.log(`🌐 External IP via proxy: ${data.ip}`);
+      } catch (e) {
+        console.log(`⚠️ Failed to fetch proxy IP: ${e.message}`);
+      }
+    } else {
+      console.log('ℹ️ No proxy, direct connection');
+    }
+  }
 
   async getToken(name) {
     const addr = config.tokens[name];
@@ -93,14 +106,14 @@ class WalletBot {
   }
 
   async run() {
-    console.log(`\n🌟 Run start for ${this.address}`);
+    console.log(`🌟 Run start for ${this.address}`);
+    await this.logProxyIp();
 
-    for (const [name] of Object.entries(config.tokens)) {
+    for (const name of Object.keys(config.tokens)) {
       try {
         const { contract, balance, formatted, symbol } = await this.getToken(name);
         console.log(`🔍 Token ${symbol}: balance ${formatted}`);
 
-        // Swap if router exists
         if (config.routers[name] && balance.gt(0)) {
           console.log(`-- swap ${symbol}`);
           await contract.approve(config.routers[name], balance, { gasLimit: config.gasLimit, gasPrice: config.gasPrice });
@@ -109,14 +122,10 @@ class WalletBot {
           await this.wallet.sendTransaction({ to: config.routers[name], data, gasLimit: config.gasLimit, gasPrice: config.gasPrice });
           console.log(`✅ Swapped ${symbol}`);
           await this.delay(config.delayMs);
-          // Re-fetch balance after swap
-          const after = await contract.balanceOf(this.address);
-          console.log(`🔍 Post-swap ${symbol}: ${ethers.utils.formatUnits(after, await contract.decimals())}`);
         }
 
-        // Stake if stake contract exists and balance > 0
-        const stakeCt = config.stakes[name];
         const currentBalance = await contract.balanceOf(this.address);
+        const stakeCt = config.stakes[name];
         if (stakeCt && currentBalance.gt(0)) {
           console.log(`-- stake ${symbol}`);
           await contract.approve(stakeCt, currentBalance, { gasLimit: config.gasLimit, gasPrice: config.gasPrice });
@@ -128,17 +137,18 @@ class WalletBot {
         }
 
       } catch (e) {
-        console.log(`❌ Error processing ${name}: ${e.message}`);
+        console.log(`❌ Error ${name}: ${e.message}`);
       }
     }
-
     console.log(`🌟 Run completed for ${this.address}`);
   }
 }
 
 (async () => {
-  const bots = privateKeys.map(key => new WalletBot(key, rotatingProxy));
-  for (const bot of bots) {
+  for (let i = 0; i < privateKeys.length; i++) {
+    const key = privateKeys[i];
+    const proxyUrl = proxyList[i] || null;
+    const bot = new WalletBot(key, proxyUrl);
     await bot.run();
     await bot.delay(config.delayMs);
   }
