@@ -7,6 +7,19 @@ const path = require('path');
 require('dotenv').config();
 
 // ======================== 🛠 HELPER FUNCTIONS ========================
+const debugStream = fs.createWriteStream(
+  path.join(__dirname, 'debugging.log'), 
+  { flags: 'a' }
+);
+
+function debugLog(...args) {
+  const timestamp = new Date().toISOString();
+  const message = args.map(arg => 
+    typeof arg === 'object' ? JSON.stringify(arg) : arg
+  ).join(' ');
+  debugStream.write(`[${timestamp}] ${message}\n`);
+}
+
 function getPrivateKeys() {
   const keys = [];
   let idx = 1;
@@ -18,7 +31,7 @@ function getPrivateKeys() {
     keys.push(process.env.PRIVATE_KEY);
   }
   if (keys.length === 0) {
-    throw new Error("No private keys found in .env file!");
+    throw new Error("No private keys found in .env!");
   }
   return keys;
 }
@@ -28,6 +41,13 @@ function delay(ms) {
 }
 
 // ======================== ⚙️ CONFIGURATION ========================
+const erc20Abi = [
+  'function balanceOf(address) view returns (uint)',
+  'function decimals() view returns (uint8)',
+  'function symbol() view returns (string)',
+  'function approve(address, uint) returns (bool)'
+];
+
 const globalConfig = {
   rpc: 'https://arbitrum-sepolia.gateway.tenderly.co',
   chainId: 421614,
@@ -68,82 +88,208 @@ const globalConfig = {
 class WalletBot {
   constructor(privateKey, config) {
     if (!privateKey.match(/^0x[0-9a-fA-F]{64}$/)) {
-      throw new Error("Invalid private key format!");
+      throw new Error("Invalid private key!");
     }
     
     this.config = config;
     this.provider = new ethers.providers.JsonRpcProvider(config.rpc);
     this.wallet = new ethers.Wallet(privateKey, this.provider);
     this.address = this.wallet.address;
+    
+    this.provider.on('debug', (data) => {
+      debugLog('[RPC]', data);
+    });
   }
 
   async getTokenBalance(tokenAddr) {
-    const tokenContract = new ethers.Contract(tokenAddr, erc20Abi, this.wallet);
     try {
-      const decimals = await tokenContract.decimals();
-      const balance = await tokenContract.balanceOf(this.address);
-      const symbol = await tokenContract.symbol();
+      const contract = new ethers.Contract(tokenAddr, erc20Abi, this.wallet);
+      const [balance, decimals, symbol] = await Promise.all([
+        contract.balanceOf(this.address),
+        contract.decimals(),
+        contract.symbol().catch(() => 'UNKNOWN')
+      ]);
       return {
         balance,
-        decimals,
         formatted: ethers.utils.formatUnits(balance, decimals),
         symbol
       };
     } catch (e) {
-      console.error(`Error getting balance: ${e.message}`);
-      return { balance: ethers.constants.Zero, formatted: '0', symbol: 'UNKNOWN' };
+      debugLog('BALANCE_ERROR', e);
+      return { balance: ethers.constants.Zero, formatted: '0', symbol: 'ERR' };
     }
   }
 
-  async executeTransaction(to, data) {
+  async getEthBalance() {
+    const balance = await this.provider.getBalance(this.address);
+    return {
+      balance,
+      formatted: ethers.utils.formatEther(balance)
+    };
+  }
+
+  async checkWalletStatus() {
+    console.log(`\n=== Wallet ${this.address.slice(0,8)}... ===`);
     try {
+      const eth = await this.getEthBalance();
+      console.log(`ETH: ${eth.formatted}`);
+      
+      for (const [name, addr] of Object.entries(this.config.tokens)) {
+        const { formatted, symbol } = await this.getTokenBalance(addr);
+        console.log(`${symbol.padEnd(6)}: ${formatted}`);
+      }
+    } catch (e) {
+      console.error('Status check failed:', e.message);
+    }
+  }
+
+  async swapToken(tokenName) {
+    try {
+      console.log(`\nSwapping ${tokenName}...`);
+      const tokenAddr = this.config.tokens[tokenName];
+      const router = this.config.routers[tokenName];
+      const methodId = this.config.methodIds[`${tokenName}Swap`];
+
+      if (!router || !methodId) {
+        throw new Error('Invalid router config!');
+      }
+
+      const { balance, formatted, symbol } = await this.getTokenBalance(tokenAddr);
+      if (balance.isZero()) {
+        console.log('Skipping: Zero balance');
+        return;
+      }
+
+      // Approve
+      const approveTx = await new ethers.Contract(tokenAddr, erc20Abi, this.wallet)
+        .approve(router, balance, {
+          gasLimit: this.config.gasLimit,
+          maxFeePerGas: this.config.maxFeePerGas,
+          maxPriorityFeePerGas: this.config.maxPriorityFeePerGas
+        });
+      await approveTx.wait();
+      await delay(this.config.delayMs);
+
+      // Execute swap
+      const data = methodId + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
       const tx = await this.wallet.sendTransaction({
-        to,
+        to: router,
         data,
         gasLimit: this.config.gasLimit,
         maxFeePerGas: this.config.maxFeePerGas,
         maxPriorityFeePerGas: this.config.maxPriorityFeePerGas
       });
-      return tx.wait();
+      console.log(`TX Hash: ${tx.hash}`);
+      await tx.wait();
+      console.log(`Swapped ${formatted} ${symbol}`);
+
     } catch (e) {
-      console.error(`Transaction failed: ${e.message}`);
-      throw e;
+      console.error(`Swap failed: ${e.message}`);
+      debugLog('SWAP_ERROR', e);
     }
   }
 
-  // ... (Tambahkan method lainnya di sini)
+  async stakeToken(tokenName, customAddr = null) {
+    try {
+      console.log(`\nStaking ${tokenName}...`);
+      const tokenAddr = customAddr || this.config.tokens[tokenName];
+      const stakeContract = this.config.stakeContracts[tokenName];
 
+      if (!stakeContract) {
+        throw new Error('Invalid stake contract!');
+      }
+
+      const { balance, formatted, symbol } = await this.getTokenBalance(tokenAddr);
+      if (balance.isZero()) {
+        console.log('Skipping: Zero balance');
+        return;
+      }
+
+      // Approve
+      const approveTx = await new ethers.Contract(tokenAddr, erc20Abi, this.wallet)
+        .approve(stakeContract, balance, {
+          gasLimit: this.config.gasLimit,
+          maxFeePerGas: this.config.maxPriorityFeePerGas,
+          maxPriorityFeePerGas: this.config.maxPriorityFeePerGas
+        });
+      await approveTx.wait();
+      await delay(this.config.delayMs);
+
+      // Execute stake
+      const data = this.config.methodIds.stake + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
+      const tx = await this.wallet.sendTransaction({
+        to: stakeContract,
+        data,
+        gasLimit: this.config.gasLimit,
+        maxFeePerGas: this.config.maxFeePerGas,
+        maxPriorityFeePerGas: this.config.maxPriorityFeePerGas
+      });
+      console.log(`TX Hash: ${tx.hash}`);
+      await tx.wait();
+      console.log(`Staked ${formatted} ${symbol}`);
+
+    } catch (e) {
+      console.error(`Stake failed: ${e.message}`);
+      debugLog('STAKE_ERROR', e);
+    }
+  }
+
+  async runBot() {
+    try {
+      console.log(`\n🚀 Starting bot for ${this.address}`);
+      await this.checkWalletStatus();
+      
+      // Swap tokens
+      await this.swapToken('virtual');
+      await this.swapToken('ath');
+      await this.swapToken('vnusd');
+
+      // Stake tokens
+      await this.stakeToken('ausd');
+      await this.stakeToken('usde');
+      await this.stakeToken('lvlusd');
+      await this.stakeToken('vusd');
+      await this.stakeToken('vnusd', '0x46a6585a0Ad1750d37B4e6810EB59cBDf591Dc30');
+
+      await this.checkWalletStatus();
+      console.log(`✅ Finished ${this.address}`);
+    } catch (e) {
+      console.error(`Bot error: ${e.message}`);
+      debugLog('BOT_ERROR', e);
+    }
+  }
 }
 
 // ======================== 🚀 MAIN EXECUTION ========================
-async function runAllBots() {
-  try {
-    const keys = getPrivateKeys();
-    console.log(`Found ${keys.length} wallet(s)`);
-
-    for (const [index, key] of keys.entries()) {
-      console.log(`\nProcessing wallet ${index + 1}/${keys.length}`);
-      try {
-        const bot = new WalletBot(key, globalConfig);
-        await bot.runBot();
-        await delay(globalConfig.delayMs);
-      } catch (e) {
-        console.error(`Wallet ${index + 1} error: ${e.message}`);
-      }
-    }
-  } catch (e) {
-    console.error(`Fatal error: ${e.message}`);
-    process.exit(1);
-  }
-}
-
-// ======================== 🏁 START SCRIPT ========================
 (async () => {
   try {
-    await runAllBots();
-    console.log('Initial run completed');
-    setInterval(runAllBots, 24 * 60 * 60 * 1000); // Jalankan setiap 24 jam
+    console.log('🔌 Initializing bot...');
+    const keys = getPrivateKeys();
+    console.log(`🔑 Loaded ${keys.length} wallet(s)`);
+
+    for (const [index, key] of keys.entries()) {
+      console.log(`\n💼 Processing wallet ${index + 1}/${keys.length}`);
+      const bot = new WalletBot(key, globalConfig);
+      await bot.runBot();
+      await delay(globalConfig.delayMs);
+    }
+
+    console.log('\n🔄 Scheduling next run (24 hours)');
+    setTimeout(() => process.exit(0), 24 * 60 * 60 * 1000);
   } catch (e) {
-    console.error('Critical failure:', e);
+    console.error('💀 Critical error:', e);
+    process.exit(1);
   }
 })();
+
+// ======================== 🛡 ERROR HANDLING ========================
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Rejection:', reason);
+  debugLog('UNHANDLED_REJECTION', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  debugLog('UNCAUGHT_EXCEPTION', error);
+  process.exit(1);
+});
