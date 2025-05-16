@@ -164,3 +164,107 @@ class WalletBot {
       if (!stakeCt) return false;
 
       const { balance, formatted, symbol } = await this.getTokenBalance(tokenAddr);
+      if (balance.isZero()) return false;
+
+      await new ethers.Contract(tokenAddr, erc20Abi, this.wallet)
+        .approve(stakeCt, balance, { gasLimit: this.config.gasLimit, gasPrice: this.config.gasPrice })
+        .then(tx => tx.wait());
+      await this.delay(this.config.delayMs);
+
+      const data = this.config.methodIds.stake + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
+      const txReceipt = await this.wallet.sendTransaction({ to: stakeCt, data, gasLimit: this.config.gasLimit, gasPrice: this.config.gasPrice })
+        .then(tx => tx.wait());
+      await this.delay(this.config.delayMs);
+
+      console.log(`Staked ${formatted} ${symbol}`);
+      const reportMsg = formatStakingReport(symbol, formatted, txReceipt.transactionHash);
+      await sendReport(reportMsg);
+      return true;
+    } catch (e) {
+      console.error(`stakeToken error for ${tokenName}:`, e);
+      return false;
+    }
+  }
+
+  async checkWalletStatus() {
+    const eth = await this.getEthBalance();
+    console.log(`\n=== Status ${this.address} ===`);
+    console.log(`ETH: ${eth.formatted}`);
+    for (const [name, addr] of Object.entries(this.config.tokens)) {
+      const { formatted, symbol } = await this.getTokenBalance(addr);
+      console.log(`${symbol} (${name}): ${formatted}`);
+    }
+  }
+
+  async claimFaucets() {
+    const endpoints = {
+      ath:     'https://app.x-network.io/maitrix-faucet/faucet',
+      usde:    'https://app.x-network.io/maitrix-usde/faucet',
+      lvlusd:  'https://app.x-network.io/maitrix-lvl/faucet',
+      virtual: 'https://app.x-network.io/maitrix-virtual/faucet',
+      vana:    'https://app.x-network.io/maitrix-vana/faucet',
+      ai16z:   'https://app.x-network.io/maitrix-ai16z/faucet'
+    };
+    for (const [tk, url] of Object.entries(endpoints)) {
+      try {
+        const res = await this.http.post(url, { address: this.address });
+        if (res.status === 200) console.log(`✅ Claimed ${tk}`);
+      } catch (e) {
+        console.error(`❌ Claim ${tk} gagal:`, e.response?.data || e.message);
+      }
+      await this.delay(this.config.delayMs);
+    }
+  }
+
+  async runBot() {
+    console.log(`\n>>> Running bot for ${this.address}`);
+    await this.checkWalletStatus();
+    await this.claimFaucets();
+
+    // Swap semua token
+    for (const name of ['virtual','ath','vnusd','azusd']) {
+      if (this.config.routers[name]) await this.swapToken(name);
+    }
+
+    // Stake dengan override khusus
+    for (const name of Object.keys(this.config.stakeContracts)) {
+      const override = name === 'vnusd'
+        ? '0x46a6585a0Ad1750d37B4e6810EB59cBDf591Dc30'
+        : name === 'azusd'
+          ? '0x5966cd11aED7D68705C9692e74e5688C892cb162'
+          : null;
+      await this.stakeToken(name, override);
+    }
+
+    await this.checkWalletStatus();
+    console.log(`<<< Finished ${this.address}`);
+  }
+}
+
+// Main loop: load keys & proxies, then run
+async function runAllBots() {
+  console.log('=== Starting multi-account bot ===');
+
+  const keys    = getPrivateKeys();
+  let proxies   = loadProxiesFromFile('proxies.txt');
+  // Sesuaikan panjang array
+  while (proxies.length < keys.length) proxies.push(null);
+  if (proxies.length > keys.length) proxies.length = keys.length;
+
+  for (let i = 0; i < keys.length; i++) {
+    console.log(`\n--- Processing account ${i+1}/${keys.length} ---`);
+    const bot = new WalletBot(keys[i], globalConfig, proxies[i]);
+    await bot.runBot();
+    await bot.delay(globalConfig.delayMs);
+  }
+
+  console.log('=== All accounts done ===');
+}
+
+// Jalankan sekarang dan setiap 24 jam
+runAllBots()
+  .then(() => console.log('Multi-account bot execution finished'))
+  .catch(e => console.error('Error:', e));
+
+const INTERVAL_MS = 24 * 60 * 60 * 1000;
+setInterval(runAllBots, INTERVAL_MS);
