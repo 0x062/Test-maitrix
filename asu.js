@@ -125,14 +125,30 @@ class WalletBot {
       await approveTx.wait();
       console.log('   ✅ Approved');
       await this.delay(this.config.delayMs);
-      const swapAbi = [`function ${name}Swap(uint256 amount)`];
+
+      // Debugging callStatic to get revert reason before sending transaction
+      const methodName = `${name}Swap`;
+      const swapAbi = [`function ${methodName}(uint256 amount)`];
       const swapContract = new ethers.Contract(routerAddr, swapAbi, this.wallet);
-      const swapTx = await swapContract[`${name}Swap`](balance, { gasLimit: this.config.gasLimit, gasPrice: this.config.gasPrice });
+      try {
+        await swapContract.callStatic[methodName](balance);
+      } catch (staticError) {
+        const data = staticError.error && staticError.error.data;
+        let reason = staticError.message;
+        if (data) {
+          try { reason = ethers.utils.toUtf8String('0x' + data.substr(10)); } catch {};
+        }
+        console.error(`❌ Pre-check revert for ${symbol}:`, reason);
+        return;
+      }
+
+      // Execute swap transaction
+      const swapTx = await swapContract[methodName](balance, { gasLimit: this.config.gasLimit, gasPrice: this.config.gasPrice });
       console.log(`   Swap tx hash: ${swapTx.hash}`);
       await swapTx.wait();
       console.log(`✅ Swapped ${formatted} ${symbol}`);
     } catch (e) {
-      console.error(`❌ swapToken error for ${name}:`, e.message || e);
+      console.error(`❌ swapToken error for ${name}:`, e.error?.data || e.message || e);
     }
   }
 
