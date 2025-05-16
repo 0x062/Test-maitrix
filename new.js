@@ -25,7 +25,7 @@ const globalConfig = {
     lvlusd:  '0x8802b7bcF8EedCc9E1bA6C20E139bEe89dd98E83',
     vusd:    '0xc14A8E2Fc341A97a57524000bF0F7F1bA4de4802',
     vnusd:   '0xBEbF4E25652e7F23CCdCCcaaCB32004501c4BfF8',
-    AI16Z:   '0x2d5a4f5634041f50180A25F26b2A8364452E3152'
+    azUSD:   '0x2d5a4f5634041f50180A25F26b2A8364452E3152'
   },
   routers: {
     virtual: '0x3dCACa90A714498624067948C092Dd0373f08265',
@@ -45,7 +45,7 @@ const globalConfig = {
     virtualSwap: '0xa6d67510',
     athSwap:     '0x1bf6318b',
     vnusdSwap:   '0xa6d67510',
-    azUSD:       '0xa6d67510',
+    azUSDSwap:   '0xa6d67510',
     stake:       '0xa694fc3a'
   },
   gasLimit: 1000000,
@@ -215,6 +215,7 @@ class WalletBot {
     if (this.config.routers.virtual) await this.swapToken('virtual');
     if (this.config.routers.ath)     await this.swapToken('ath');
     if (this.config.routers.vnusd)   await this.swapToken('vnusd');
+    if (this.config.routers.azUSD)   await this.swapToken('azUSD');
 
     // Stake: override hanya untuk vnusd
     for (const name of Object.keys(this.config.stakeContracts)) {
