@@ -5,6 +5,8 @@ const axios = require('axios');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 require('dotenv').config();
 
+// Load proxy if provided
+typeof process !== 'undefined';
 const proxyUrl = process.env.PROXY_URL;
 const proxyAgent = proxyUrl ? new HttpsProxyAgent(proxyUrl) : null;
 if (proxyAgent) {
@@ -12,6 +14,7 @@ if (proxyAgent) {
   axios.defaults.httpsAgent = proxyAgent;
 }
 
+// Configuration
 const globalConfig = {
   rpc: 'https://arbitrum-sepolia.gateway.tenderly.co',
   chainId: 421614,
@@ -22,7 +25,7 @@ const globalConfig = {
     usde:    '0xf4BE938070f59764C85fAcE374F92A4670ff3877',
     lvlusd:  '0x8802b7bcF8EedCc9E1bA6C20E139bEe89dd98E83',
     vusd:    '0xc14A8E2Fc341A97a57524000bF0F7F1bA4de4802',
-    vnusd: '0xBEbF4E25652e7F23CCdCCcaaCB32004501c4BfF8'
+    vnusd:   '0xBEbF4E25652e7F23CCdCCcaaCB32004501c4BfF8'
   },
   routers: {
     virtual: '0x3dCACa90A714498624067948C092Dd0373f08265',
@@ -41,6 +44,7 @@ const globalConfig = {
   delayMs: 17000
 };
 
+// Minimal ERC20 ABI
 const erc20Abi = [
   'function balanceOf(address owner) view returns (uint256)',
   'function decimals() view returns (uint8)',
@@ -48,6 +52,7 @@ const erc20Abi = [
   'function symbol() view returns (string)'
 ];
 
+// Read private keys from file
 function getPrivateKeys() {
   try {
     const data = fs.readFileSync('private_keys.txt', 'utf8');
@@ -62,8 +67,15 @@ function getPrivateKeys() {
 class WalletBot {
   constructor(privateKey, config) {
     this.config = config;
+    // Setup provider with or without proxy
     if (proxyAgent) {
-      this.provider = new ethers.providers.JsonRpcProvider({ url: config.rpc, transport: { url: config.rpc, fetch: (url, opt) => fetch(url, { ...opt, agent: proxyAgent }) } });
+      this.provider = new ethers.providers.JsonRpcProvider({
+        url: config.rpc,
+        transport: {
+          url: config.rpc,
+          fetch: (url, opt) => fetch(url, { ...opt, agent: proxyAgent })
+        }
+      });
       console.log(`🌐 Proxy: ${proxyUrl}`);
     } else {
       this.provider = new ethers.providers.JsonRpcProvider(config.rpc);
@@ -83,109 +95,105 @@ class WalletBot {
     }
   }
 
-  async delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+  async delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
 
-  async getTokenBalance(addr) {
-    const c = new ethers.Contract(addr, erc20Abi, this.wallet);
-    const dec = await c.decimals();
-    const bal = await c.balanceOf(this.address);
-    let sym;
-    try { sym = await c.symbol(); } catch { sym = 'TOKEN'; }
-    return { balance: bal, formatted: ethers.utils.formatUnits(bal, dec), symbol: sym };
+  async getTokenBalance(tokenAddr) {
+    const contract = new ethers.Contract(tokenAddr, erc20Abi, this.wallet);
+    const decimals = await contract.decimals();
+    const balance = await contract.balanceOf(this.address);
+    let symbol;
+    try {
+      symbol = await contract.symbol();
+    } catch {
+      symbol = 'TOKEN';
+    }
+    return {
+      raw: balance,
+      formatted: ethers.utils.formatUnits(balance, decimals),
+      symbol
+    };
   }
 
   async getEthBalance() {
-    const w = await this.provider.getBalance(this.address);
-    return { formatted: ethers.utils.formatEther(w) };
+    const balance = await this.provider.getBalance(this.address);
+    return ethers.utils.formatEther(balance);
   }
 
-    async swapToken(name) {
-    try {
-      const tokenAddr = this.config.tokens[name];
-      const routerAddr = this.config.routers[name];
-      if (!routerAddr) return;
-      const { balance, formatted, symbol } = await this.getTokenBalance(tokenAddr);
-      console.log(`↔️ Checking ${symbol}: ${formatted}`);
-      if (balance.isZero()) {
-        console.log(`⚠️ Skip swap ${symbol}, balance = 0`);
-        return;
-      }
-      console.log(`🔁 Swapping ${formatted} ${symbol}`);
-      const tokenContract = new ethers.Contract(tokenAddr, erc20Abi, this.wallet);
-      const approveTx = await tokenContract.approve(routerAddr, balance, {
-        gasLimit: this.config.gasLimit,
-        gasPrice: this.config.gasPrice
-      });
-      console.log(`   Approve hash: ${approveTx.hash}`);
-      await approveTx.wait();
-      console.log('   ✅ Approved');
-      await this.delay(this.config.delayMs);
-      const swapAbi = [`function ${name}Swap(uint256 amount)`];
-      const swapContract = new ethers.Contract(routerAddr, swapAbi, this.wallet);
-      const swapTx = await swapContract[`${name}Swap`](balance, {
-        gasLimit: this.config.gasLimit,
-        gasPrice: this.config.gasPrice
-      });
-      console.log(`   Swap tx hash: ${swapTx.hash}`);
-      await swapTx.wait();
-      console.log(`✅ Swapped ${formatted} ${symbol}`);
-    } catch (e) {
-      console.error(`❌ swapToken error for ${name}:`, e.message || e);
+  async swapToken(name) {
+    const tokenAddr = this.config.tokens[name];
+    const routerAddr = this.config.routers[name];
+    if (!routerAddr) return;
+
+    const { raw, formatted, symbol } = await this.getTokenBalance(tokenAddr);
+    console.log(`↔️ Checking ${symbol}: ${formatted}`);
+    if (raw.isZero()) {
+      console.log(`⚠️ Skip swap ${symbol}, balance = 0`);
+      return;
     }
-  }
-      console.log(`✍️ Approving ${symbol}…`);
-      const approveTx = await new ethers.Contract(addr, erc20Abi, this.wallet)
-        .approve(router, balance, { gasLimit: this.config.gasLimit, gasPrice: this.config.gasPrice });
-      console.log(`   Approve hash: ${approveTx.hash}`);
-      await approveTx.wait();
-      console.log('   ✅ Approved');
-      await this.delay(this.config.delayMs);
-      const data = await this.wallet.populateTransaction({ to: router, data: approveTx.data });
-      console.log('📡 Swap tx data:', data.data);
-      const tx = await this.wallet.sendTransaction({ to: router, data: data.data, gasLimit: this.config.gasLimit, gasPrice: this.config.gasPrice });
-      console.log(`   Swap tx hash: ${tx.hash}`);
-      await tx.wait();
-      console.log(`✅ Swapped ${formatted} ${symbol}`);
-    } catch (e) {
-      console.error(`❌ swapToken error for ${name}:`, e.message || e);
-    }
+
+    console.log(`🔁 Swapping ${formatted} ${symbol}`);
+    const tokenContract = new ethers.Contract(tokenAddr, erc20Abi, this.wallet);
+    const approveTx = await tokenContract.approve(routerAddr, raw, {
+      gasLimit: this.config.gasLimit,
+      gasPrice: this.config.gasPrice
+    });
+    console.log(`   Approve hash: ${approveTx.hash}`);
+    await approveTx.wait();
+    console.log('   ✅ Approved');
+
+    await this.delay(this.config.delayMs);
+    const swapAbi = [`function ${name}Swap(uint256 amount)`];
+    const swapContract = new ethers.Contract(routerAddr, swapAbi, this.wallet);
+    const swapTx = await swapContract[`${name}Swap`](raw, {
+      gasLimit: this.config.gasLimit,
+      gasPrice: this.config.gasPrice
+    });
+    console.log(`   Swap tx hash: ${swapTx.hash}`);
+    await swapTx.wait();
+    console.log(`✅ Swapped ${formatted} ${symbol}`);
   }
 
   async stakeToken(name, customAddr = null) {
     const tokenAddr = customAddr || this.config.tokens[name];
-    const stakeCt   = this.config.stakeContracts[name];
-    const stakeAbi  = ['function stake(uint256 amount)'];
-    try {
-      const { balance, formatted, symbol } = await this.getTokenBalance(tokenAddr);
-      console.log(`🛡️ Preparing to stake ${symbol}: ${formatted} to ${stakeCt}`);
-      if (balance.isZero()) { console.log(`⚠️ Skip stake ${symbol}, balance = 0`); return; }
-      console.log(`✍️ Approving staking contract ${stakeCt}…`);
-      const approveTx = await new ethers.Contract(tokenAddr, erc20Abi, this.wallet)
-        .approve(stakeCt, balance, { gasLimit: this.config.gasLimit, gasPrice: this.config.gasPrice });
-      console.log(`   Approve hash: ${approveTx.hash}`);
-      await approveTx.wait();
-      console.log('   ✅ Approved for staking');
-      await this.delay(this.config.delayMs);
+    const stakeAddr = this.config.stakeContracts[name];
+    const { raw, formatted, symbol } = await this.getTokenBalance(tokenAddr);
 
-      console.log('🔨 Staking via contract ABI');
-      const stakeContract = new ethers.Contract(stakeCt, stakeAbi, this.wallet);
-      const tx = await stakeContract.stake(balance, { gasLimit: this.config.gasLimit, gasPrice: this.config.gasPrice });
-      console.log(`   Stake tx hash: ${tx.hash}`);
-      await tx.wait();
-      console.log(`🎉 Staked ${formatted} ${symbol}`);
-      await sendReport(`🚀 *Staked!* ${symbol} ${formatted} (${tx.hash})`);
-    } catch (e) {
-      console.error(`❌ stakeToken error for ${
- name }:`, e.message || e);
-      if (e.error && e.error.data) console.error('   RPC revert data:', e.error.data);
+    console.log(`🛡️ Stake ${symbol}: ${formatted}`);
+    if (raw.isZero()) {
+      console.log(`⚠️ Skip stake ${symbol}, balance = 0`);
+      return;
     }
+
+    const tokenContract = new ethers.Contract(tokenAddr, erc20Abi, this.wallet);
+    const approveTx = await tokenContract.approve(stakeAddr, raw, {
+      gasLimit: this.config.gasLimit,
+      gasPrice: this.config.gasPrice
+    });
+    console.log(`   Approve hash: ${approveTx.hash}`);
+    await approveTx.wait();
+    console.log('   ✅ Approved for staking');
+
+    await this.delay(this.config.delayMs);
+    console.log('🔨 Executing stake');
+    const stakeAbi = ['function stake(uint256 amount)'];
+    const stakeContract = new ethers.Contract(stakeAddr, stakeAbi, this.wallet);
+    const tx = await stakeContract.stake(raw, {
+      gasLimit: this.config.gasLimit,
+      gasPrice: this.config.gasPrice
+    });
+    console.log(`   Stake tx hash: ${tx.hash}`);
+    await tx.wait();
+    console.log(`🎉 Staked ${formatted} ${symbol}`);
+    await sendReport(`🚀 *Staked!* ${symbol} ${formatted} (${tx.hash})`);
   }
 
   async checkStatus() {
-    const eth = await this.getEthBalance();
-    console.log(`💧 ETH: ${eth.formatted}`);
-    for (let [n, a] of Object.entries(this.config.tokens)) {
-      const { formatted, symbol } = await this.getTokenBalance(a);
+    const ethBal = await this.getEthBalance();
+    console.log(`💧 ETH: ${ethBal}`);
+    for (const [key, addr] of Object.entries(this.config.tokens)) {
+      const { formatted, symbol } = await this.getTokenBalance(addr);
       console.log(`🔹 ${symbol}: ${formatted}`);
     }
   }
@@ -199,8 +207,13 @@ class WalletBot {
       vana:    'https://app.x-network.io/maitrix-vana/faucet'
     };
     console.log('🚰 Starting faucets');
-    for (let [k,u] of Object.entries(endpoints)) {
-      try { await axios.post(u, { address: this.address }); console.log(`✔️ Faucet ${k}`); } catch { console.error(`❌ Faucet ${k} failed`); }
+    for (const [k, url] of Object.entries(endpoints)) {
+      try {
+        await axios.post(url, { address: this.address });
+        console.log(`✔️ Faucet ${k}`);
+      } catch {
+        console.error(`❌ Faucet ${k} failed`);
+      }
       await this.delay(this.config.delayMs);
     }
     console.log('🚰 Finished faucets');
@@ -211,14 +224,28 @@ class WalletBot {
     await this.fetchIP();
     await this.checkStatus();
     await this.claimFaucets();
+
     for (const name of Object.keys(this.config.tokens)) {
       if (this.config.routers[name]) {
         await this.swapToken(name);
       } else {
-        await this.stakeToken(name, name === 'vnusd' ? '0x46a6585a0Ad1750d37B4e6810EB59cBDf591Dc30' : null);
+        // custom override for vnusd stake address
+        const custom = name === 'vnusd' ? '0x46a658a0Ad1750d37B4e6810EB59cBDf591Dc30' : null;
+        await this.stakeToken(name, custom);
       }
       await this.delay(this.config.delayMs);
     }
+
     await this.checkStatus();
     console.log(`✅ Done ${this.address}`);
-  }();
+  }
+}
+
+// Main execution
+(async () => {
+  const keys = getPrivateKeys();
+  for (const pk of keys) {
+    const bot = new WalletBot(pk, globalConfig);
+    await bot.runBot();
+  }
+})();
