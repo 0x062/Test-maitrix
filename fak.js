@@ -11,7 +11,10 @@ require('dotenv').config();
 function loadProxiesFromFile(filename = 'proxies.txt') {
   const p = path.resolve(__dirname, filename);
   if (!fs.existsSync(p)) return [];
-  return fs.readFileSync(p, 'utf8').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  return fs.readFileSync(p, 'utf8')
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(Boolean);
 }
 
 function formatStakingReport(token, amount, tx) {
@@ -43,10 +46,10 @@ const globalConfig = {
     vnusd:  '0x2608A88219BFB34519f635Dd9Ca2Ae971539ca60'
   },
   methodIds: {
-    virtualSwap:'0xa6d67510',
-    athSwap:    '0x1bf6318b',
-    vnusdSwap:  '0xa6d67510',
-    stake:      '0xa694fc3a'
+    virtualSwap: '0xa6d67510',
+    athSwap:     '0x1bf6318b',
+    vnusdSwap:   '0xa6d67510',
+    stake:       '0xa694fc3a'
   },
   gasLimit: 1000000,
   gasPrice: ethers.utils.parseUnits('0.1', 'gwei'),
@@ -62,81 +65,92 @@ const erc20Abi = [
 ];
 
 function getPrivateKeys() {
-  const a = [];
+  const keys = [];
   let i = 1;
   while (process.env[`PRIVATE_KEY_${i}`]) {
-    a.push(process.env[`PRIVATE_KEY_${i}`]);
+    keys.push(process.env[`PRIVATE_KEY_${i}`]);
     i++;
   }
-  if (a.length === 0 && process.env.PRIVATE_KEY) a.push(process.env.PRIVATE_KEY);
-  return a;
+  if (keys.length === 0 && process.env.PRIVATE_KEY) keys.push(process.env.PRIVATE_KEY);
+  return keys;
 }
 
 class WalletBot {
   constructor(key, cfg, proxy) {
     const agent = proxy
-      ? (proxy.startsWith('socks') ? new SocksProxyAgent(proxy) : new HttpsProxyAgent(proxy))
+      ? (proxy.startsWith('socks')
+          ? new SocksProxyAgent(proxy)
+          : new HttpsProxyAgent(proxy))
       : null;
+
     this.provider = agent
       ? new ethers.providers.JsonRpcProvider({ url: cfg.rpc, fetch: (u, o) => fetch(u, { agent, ...o }) })
       : new ethers.providers.JsonRpcProvider(cfg.rpc);
+
     this.http = agent
       ? axios.create({ httpAgent: agent, httpsAgent: agent, timeout: 10000 })
       : axios;
+
     this.wallet = new ethers.Wallet(key, this.provider);
     this.address = this.wallet.address;
     this.cfg = cfg;
     console.log(`🟢 Inited ${this.address} via proxy ${proxy || 'none'}`);
   }
 
-  delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+  delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
 
   async getTokenBalance(addr) {
-    const c = new ethers.Contract(addr, erc20Abi, this.wallet);
-    const d = await c.decimals();
-    const b = await c.balanceOf(this.address);
-    const s = await c.symbol().catch(() => '?');
-    return { balance: b, formatted: ethers.utils.formatUnits(b, d), symbol: s, contract: c };
+    const contract = new ethers.Contract(addr, erc20Abi, this.wallet);
+    const decimals = await contract.decimals();
+    const balance = await contract.balanceOf(this.address);
+    const symbol = await contract.symbol().catch(() => '?');
+    return { balance, formatted: ethers.utils.formatUnits(balance, decimals), symbol, contract };
   }
 
   async getEthBalance() {
-    const b = await this.provider.getBalance(this.address);
-    return ethers.utils.formatEther(b);
+    const balance = await this.provider.getBalance(this.address);
+    return ethers.utils.formatEther(balance);
   }
 
   async swapToken(name) {
-    try {
-      const { balance, formatted, symbol } = await this.getTokenBalance(this.cfg.tokens[name]);
-      if (balance.isZero()) {
-        console.log(`⚠️ [${this.address}] Skip swap ${symbol}: balance=0`);
-        return;
-      }
-      const router = this.cfg.routers[name];
-      const methodId = this.cfg.methodIds[`${name}Swap`];
-      const payload = methodId + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
-      try {
-        await this.provider.call({ to: router, data: payload });
-      } catch (err) {
-        console.log(`❌ [${this.address}] Simulasi swap ${symbol} revert: ${err.message}`);
-        return;
-      }
-      const approveTx = await new ethers.Contract(this.cfg.tokens[name], erc20Abi, this.wallet)
-        .approve(router, balance, { gasLimit: this.cfg.gasLimit, gasPrice: this.cfg.gasPrice });
-      console.log(`🔏 Approving ${symbol}: ${approveTx.hash}`);
-      await approveTx.wait();
-      await this.delay(this.cfg.delayMs);
-      const swapTx = await this.wallet.sendTransaction({ to: router, data: payload, gasLimit: this.cfg.gasLimit, gasPrice: this.cfg.gasPrice });
-      console.log(`⚡ Swapping ${formatted} ${symbol}: ${swapTx.hash}`);
-      await swapTx.wait();
-      await this.delay(this.cfg.delayMs);
-      console.log(`✅ Swapped ${formatted} ${symbol}`);
-    } catch (e) {
-      console.error(`❌ swap ${name} error:`, e.message);
+    const { balance, formatted, symbol } = await this.getTokenBalance(this.cfg.tokens[name]);
+    if (balance.isZero()) {
+      console.log(`⚠️ [${this.address}] Skip swap ${symbol}: balance=0`);
+      return;
     }
+
+    const router = this.cfg.routers[name];
+    const methodId = this.cfg.methodIds[`${name}Swap`];
+    const payload = methodId + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
+
+    // simulate
+    try {
+      await this.provider.call({ to: router, data: payload });
+    } catch (err) {
+      console.log(`❌ [${this.address}] Simulasi swap ${symbol} revert: ${err.message}`);
+      return;
+    }
+
+    const approveTx = await new ethers.Contract(this.cfg.tokens[name], erc20Abi, this.wallet)
+      .approve(router, balance, { gasLimit: this.cfg.gasLimit, gasPrice: this.cfg.gasPrice });
+    console.log(`🔏 Approving ${symbol}: ${approveTx.hash}`);
+    await approveTx.wait();
+    await this.delay(this.cfg.delayMs);
+
+    const swapTx = await this.wallet.sendTransaction({ to: router, data: payload, gasLimit: this.cfg.gasLimit, gasPrice: this.cfg.gasPrice });
+    console.log(`⚡ Swapping ${formatted} ${symbol}: ${swapTx.hash}`);
+    await swapTx.wait();
+    await this.delay(this.cfg.delayMs);
+
+    console.log(`✅ Swapped ${formatted} ${symbol}`);
   }
 
   async stakeToken(name) {
-    // ... existing stakeToken implementation ...
+    // implement stake logic if needed, e.g.:
+    // const { balance, formatted, symbol } = await this.getTokenBalance(this.cfg.tokens[name]);
+    // ... similar to swapToken but using this.cfg.stakeContracts[name] and methodIds.stake
   }
 
   async claimFaucets() {
@@ -148,29 +162,46 @@ class WalletBot {
       vana:    'https://app.x-network.io/maitrix-vana/faucet',
       ai16z:   'https://app.x-network.io/maitrix-ai16z/faucet'
     };
+
     for (const [tk, url] of Object.entries(endpoints)) {
       try {
         const res = await this.http.post(url, { address: this.address });
         console.log(`💧 [${this.address}] Claimed faucet ${tk}: HTTP ${res.status}`);
       } catch (e) {
-        console.log(`❌ [${this.address}] Faucet ${tk} error:`, e.message);
+        console.log(`❌ [${this.address}] Faucet ${tk} error: ${e.message}`);
       }
       await this.delay(this.cfg.delayMs);
     }
   }
 
-  async checkWalletStatus () => () => {
+  async runBot() {
+    // Example execution sequence
+    await this.claimFaucets();
+    for (const name of Object.keys(this.cfg.tokens)) {
+      await this.swapToken(name);
+    }
+    for (const name of Object.keys(this.cfg.stakeContracts)) {
+      await this.stakeToken(name);
+    }
+  }
+}
+
+(async function main() {
   const keys = getPrivateKeys();
   const proxies = loadProxiesFromFile();
+
   for (let i = 0; i < keys.length; i++) {
     const proxy = proxies.length ? proxies[i % proxies.length] : null;
     const bot = new WalletBot(keys[i], globalConfig, proxy);
+
     try {
       const ip = await bot.http.get('https://api.ipify.org?format=json');
       console.log(`Account ${i + 1}/${keys.length} IP: ${ip.data.ip}`);
     } catch {}
+
     await bot.runBot();
     await bot.delay(globalConfig.delayMs);
   }
+
   console.log('✨ All done');
 })();
