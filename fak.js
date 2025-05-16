@@ -60,7 +60,7 @@ const globalConfig = {
     virtualSwap: '0xa6d67510',
     athSwap: '0x1bf6318b',
     vnusdSwap: '0xa6d67510',
-    stake: '0xa694fc3a'
+    stake: '0xa694fc3a' // generic stake method id, ensure correct ABI on contract
   },
   gasLimit: 1000000,
   gasPrice: ethers.utils.parseUnits('0.1', 'gwei'),
@@ -110,7 +110,7 @@ class WalletBot {
       const bal = info.balance;
       const fmt = info.formatted;
       const sym = info.symbol;
-      if (bal.isZero()) return console.log(`⚠️ No balance to swap for ${sym} (${name})`);
+      if (bal.isZero()) return console.log(`⚠️ No balance to swap for ${sym}`);
       console.log('🔄 Preparing to swap', fmt, sym);
       const data = methodId + ethers.utils.defaultAbiCoder.encode(['uint256'], [bal]).slice(2);
       await this.provider.call({ to: router, data });
@@ -133,11 +133,17 @@ class WalletBot {
       const bal = info.balance;
       const fmt = info.formatted;
       const sym = info.symbol;
-      if (bal.isZero()) return console.log(`⚠️ No balance to stake for ${sym} (${name})`);
+      if (bal.isZero()) return console.log(`⚠️ No balance to stake for ${sym}`);
       console.log('🏦 Preparing to stake', fmt, sym);
       const addr = this.cfg.stakeContracts[name];
       const data = this.cfg.methodIds.stake + ethers.utils.defaultAbiCoder.encode(['uint256'], [bal]).slice(2);
-      await this.provider.call({ to: addr, data });
+      // simulate call to check for revert reason
+      try {
+        await this.provider.call({ to: addr, data });
+      } catch (simErr) {
+        console.error(`⚠️ Simulation revert for stake ${name}:`, simErr.message);
+        return;
+      }
       const approver = new ethers.Contract(this.cfg.tokens[name], erc20Abi, this.wallet);
       const atx = await approver.approve(addr, bal, { gasLimit: this.cfg.gasLimit, gasPrice: this.cfg.gasPrice });
       await atx.wait();
