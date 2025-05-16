@@ -39,7 +39,7 @@ const globalConfig = {
     lvlusd:'0x5De3fBd40D4c3892914c3b67b5B529D776A1483A',
     vusd:  '0x5bb9Fa02a3DCCDB4E9099b48e8Ba5841D2e59d51',
     vnusd: '0x2608A88219BFB34519f635Dd9Ca2Ae971539ca60',
-    azUSD: '0xf45fde3f484c44cc35bdc2a7fca3ddde0c8f252e'
+    azUSD: '0x5966cd11aed7d68705c9692e74e5688c892cb162'
   },
   methodIds: {
     virtualSwap: '0xa6d67510',
