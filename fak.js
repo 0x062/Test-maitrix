@@ -8,71 +8,128 @@ const axios = require('axios');
 const { sendReport } = require('./telegramReporter');
 require('dotenv').config();
 
-// Load list helper
 function loadList(filename) {
   const file = path.resolve(__dirname, filename);
   if (!fs.existsSync(file)) return [];
-  return fs.readFileSync(file, 'utf8').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  return fs.readFileSync(file, 'utf8')
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(Boolean);
 }
+
+const privateKeys = loadList('private_keys.txt');
 const rotatingProxy = process.env.ROTATING_PROXY_URL || null;
 
-(async()=>{
-  if (!privateKeys.length) return console.error('No private_keys.txt');
-  for (let i = 0; i < privateKeys.length; i++) {
-    const key = privateKeys[i];
-    const bot = new WalletBot(key, rotatingProxy);
-    await bot.run();
-    await bot.delay(config.delayMs);
+const config = {
+  rpc: 'https://arbitrum-sepolia.gateway.tenderly.co',
+  gasLimit: 1000000,
+  gasPrice: ethers.utils.parseUnits('0.1', 'gwei'),
+  delayMs: 15000,
+  tokens: {
+    virtual: '0xFF27D611ab162d7827bbbA59F140C1E7aE56e95C',
+    ath: '0x1428444Eacdc0Fd115dd4318FcE65B61Cd1ef399',
+    vnusd: '0xBEbF4E25652e7F23CCdCCcaaCB32004501c4BfF8',
+    azusd: '0x2d5a4f5634041f50180A25F26b2A8364452E3152'
+  },
+  routers: {
+    virtual: '0x3dCACa90A714498624067948C092Dd0373f08265',
+    ath: '0x2cFDeE1d5f04dD235AEA47E1aD2fB66e3A61C13e',
+    vnusd: '0xEfbAE3A68b17a61f21C7809Edfa8Aa3CA7B2546f',
+    azusd: '0xb0b53d8b4ef06f9bbe5db624113c6a5d35bb7522'
+  },
+  stakes: {
+    ausd: '0x054de909723ECda2d119E31583D40a52a332f85c',
+    usde: '0x3988053b7c748023a1ae19a8ed4c1bf217932bdb',
+    lvlusd: '0x5De3fBd40D4c3892914c3b67b5B529D776A1483A',
+    vusd: '0x5bb9Fa02a3DCCDB4E9099b48eBa5841D2e59d51',
+    vnusd: '0x2608A88219BFB34519f635Dd9Ca2Ae971539ca60',
+    azusd: '0xf45fde3f484c44cc35bdc2a7fca3ddde0c8f252e'
+  },
+  methodIds: {
+    virtual: '0xa6d67510',
+    ath: '0x1bf6318b',
+    vnusd: '0xa6d67510',
+    azusd: '0xa6d67510',
+    stake: '0xa694fc3a'
   }
-})(); console.log(`💧 ${url}`); } catch {};
+};
+
+const erc20Abi = [
+  'function balanceOf(address) view returns (uint256)',
+  'function decimals() view returns (uint8)',
+  'function symbol() view returns (string)',
+  'function approve(address,uint256) returns (bool)',
+  'function allowance(address,address) view returns (uint256)'
+];
+
+class WalletBot {
+  constructor(key, proxyUrl) {
+    const agent = proxyUrl
+      ? (proxyUrl.startsWith('socks') ? new SocksProxyAgent(proxyUrl) : new HttpsProxyAgent(proxyUrl))
+      : null;
+    this.provider = agent
+      ? new ethers.providers.JsonRpcProvider({ url: config.rpc, fetch: (u, o) => fetch(u, { agent, ...o }) })
+      : new ethers.providers.JsonRpcProvider(config.rpc);
+    this.http = agent
+      ? axios.create({ httpAgent: agent, httpsAgent: agent, timeout: 10000 })
+      : axios;
+    this.wallet = new ethers.Wallet(key, this.provider);
+    this.address = this.wallet.address;
+  }
+  delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+  async getToken(name) {
+    const addr = config.tokens[name];
+    const contract = new ethers.Contract(addr, erc20Abi, this.wallet);
+    const decimals = await contract.decimals();
+    const balance = await contract.balanceOf(this.address);
+    const symbol = await contract.symbol().catch(() => '?');
+    return { contract, balance, formatted: ethers.utils.formatUnits(balance, decimals), symbol };
+  }
+
+  async claimFaucets() {
+    const endpoints = [
+      'https://app.x-network.io/maitrix-faucet/faucet',
+      'https://app.x-network.io/maitrix-usde/faucet',
+      'https://app.x-network.io/maitrix-lvl/faucet',
+      'https://app.x-network.io/maitrix-virtual/faucet',
+      'https://app.x-network.io/maitrix-vana/faucet',
+      'https://app.x-network.io/maitrix-ai16z/faucet'
+    ];
+    for (const url of endpoints) {
+      try { await this.http.post(url, { address: this.address }); } catch (e) {}
       await this.delay(config.delayMs);
     }
-    console.log('-- claimFaucets done');
   }
 
   async swap(name) {
     const router = config.routers[name];
     const method = config.methodIds[name];
     if (!router || !method) return;
-    console.log(`🔄 Swap ${name}`);
-    const { contract, balance, formatted, symbol } = await this.getToken(name);
+    const { contract, balance } = await this.getToken(name);
     if (balance.isZero()) return;
     const tx1 = await contract.approve(router, balance, { gasLimit: config.gasLimit, gasPrice: config.gasPrice });
-    console.log(`🔏 Approve ${symbol}: ${tx1.hash}`);
     await tx1.wait(); await this.delay(config.delayMs);
-    const data = method + ethers.utils.defaultAbiCoder.encode(['uint256'],[balance]).slice(2);
+    const data = method + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
     const tx2 = await this.wallet.sendTransaction({ to: router, data, gasLimit: config.gasLimit, gasPrice: config.gasPrice });
-    console.log(`⚡ Swap ${symbol}: ${tx2.hash}`);
     await tx2.wait(); await this.delay(config.delayMs);
   }
 
   async stake(name, overrideAddr) {
-    console.log(`🏦 Stake ${name}`);
-    const { contract, balance, formatted, symbol } = await (async()=> { const tname=overrideAddr? overrideAddr: config.tokens[name]; return this.getToken(name); })();
+    const { contract, balance, symbol, formatted } = await this.getToken(name);
     if (balance.isZero()) return;
     const stakeCt = config.stakes[name];
     const tx1 = await contract.approve(stakeCt, balance, { gasLimit: config.gasLimit, gasPrice: config.gasPrice });
-    console.log(`🔏 Approve stake ${symbol}: ${tx1.hash}`);
     await tx1.wait(); await this.delay(config.delayMs);
-    const allow = await contract.allowance(this.address, stakeCt);
-    console.log(`➡️ Allowance ${symbol}: ${ethers.utils.formatUnits(allow)}`);
-    const data = config.methodIds.stake + ethers.utils.defaultAbiCoder.encode(['uint256'],[balance]).slice(2);
+    const data = config.methodIds.stake + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
     const tx2 = await this.wallet.sendTransaction({ to: stakeCt, data, gasLimit: config.gasLimit, gasPrice: config.gasPrice });
-    console.log(`⚡ Stake ${symbol}: ${tx2.hash}`);
     await tx2.wait(); await this.delay(config.delayMs);
     await sendReport(formatStakingReport(symbol, formatted, tx2.hash));
   }
 
-    async run() {
-    console.log(`
-🌟 Processing ${this.address}`);
-    // Re-add faucet claims
+  async run() {
     await this.claimFaucets();
-    // Perform swaps for configured tokens
-    for (const name of Object.keys(config.routers)) {
-      await this.swap(name);
-    }
-    // Perform stakes for configured contracts
+    for (const name of Object.keys(config.routers)) await this.swap(name);
     for (const name of Object.keys(config.stakes)) {
       const override = name === 'vnusd'
         ? '0x46a6585a0Ad1750d37B4e6810EB59cBDf591Dc30'
@@ -82,15 +139,12 @@ const rotatingProxy = process.env.ROTATING_PROXY_URL || null;
       await this.stake(name, override);
     }
   }
-  }
 }
 
-(async()=>{
-  if (!privateKeys.length) return console.error('No private_keys.txt');
-  for (let i = 0; i < privateKeys.length; i++) {
-    const key = privateKeys[i];
-    const proxy = proxies.length ? proxies[i % proxies.length] : null;
-    const bot = new WalletBot(key, proxy);
+(async () => {
+  if (!privateKeys.length) return;
+  for (const key of privateKeys) {
+    const bot = new WalletBot(key, rotatingProxy);
     await bot.run();
     await bot.delay(config.delayMs);
   }
