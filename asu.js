@@ -192,7 +192,7 @@ class WalletBot {
 }
 
 (async()=>{
-n  console.log('🚀 Multi-bot start');
+  console.log('🚀 Multi-bot start');
   const keys = getPrivateKeys();
   if (!keys.length) return console.error('❌ No keys');
   for (let k of keys) {
