@@ -12,10 +12,12 @@ require('dotenv').config();
 // Utility: load proxies from file\ nfunction loadProxiesFromFile(filename = 'proxies.txt') {
   const filePath = path.resolve(__dirname, filename);
   if (!fs.existsSync(filePath)) return [];
-  return fs.readFileSync(filePath, 'utf8')
+  const lines = fs.readFileSync(filePath, 'utf8')
     .split(/\r?\n/)
     .map(line => line.trim())
     .filter(line => line);
+  console.log('[loadProxiesFromFile] proxies loaded:', lines);
+  return lines;
 }
 
 function formatStakingReport(token, amount, txHash) {
@@ -128,8 +130,8 @@ class WalletBot {
 
   async swapToken(name) {
     try {
-      const { data: ip } = await this.http.get('https://api.ipify.org?format=json');
-      console.log(`[swapToken] ${this.address} uses IP: ${ip.ip}`);
+      const { data } = await this.http.get('https://api.ipify.org?format=json');
+      console.log(`[swapToken] ${this.address} uses IP: ${data.ip}`);
 
       const tokenAddr = this.config.tokens[name];
       const router = this.config.routers[name];
@@ -173,82 +175,4 @@ class WalletBot {
       await this.delay(this.config.delayMs);
 
       console.log(`Staked ${formatted} ${symbol}`);
-      await sendReport(formatStakingReport(symbol, formatted, receipt.transactionHash));
-    } catch (e) {
-      console.error(`stakeToken error ${name}:`, e.message);
-    }
-  }
-
-  async claimFaucets() {
-    const endpoints = {
-      ath: 'https://app.x-network.io/maitrix-faucet/faucet',
-      usde: 'https://app.x-network.io/maitrix-usde/faucet',
-      lvlusd: 'https://app.x-network.io/maitrix-lvl/faucet',
-      virtual: 'https://app.x-network.io/maitrix-virtual/faucet',
-      vana: 'https://app.x-network.io/maitrix-vana/faucet',
-      ai16z: 'https://app.x-network.io/maitrix-ai16z/faucet'
-    };
-    for (const [tk, url] of Object.entries(endpoints)) {
-      try {
-        const res = await this.http.post(url, { address: this.address });
-        console.log(`[claimFaucets] ${tk} status: ${res.status}`);
-      } catch (e) {
-        console.error(`claimFaucets error ${tk}:`, e.message);
-      }
-      await this.delay(this.config.delayMs);
-    }
-  }
-
-  async checkWalletStatus() {
-    const { formatted: ethFormatted } = await this.getEthBalance();
-    console.log(`\n=== Status ${this.address} ===`);
-    console.log(`ETH: ${ethFormatted}`);
-    for (const [name, addr] of Object.entries(this.config.tokens)) {
-      const { formatted, symbol } = await this.getTokenBalance(addr);
-      console.log(`${symbol} (${name}): ${formatted}`);
-    }
-  }
-
-  async runBot() {
-    console.log(`\n>>> Running bot for ${this.address}`);
-    await this.checkWalletStatus();
-    await this.claimFaucets();
-    for (const name of ['virtual', 'ath', 'vnusd', 'azusd']) await this.swapToken(name);
-    for (const name of Object.keys(this.config.stakeContracts)) {
-      const override = name === 'vnusd'
-        ? '0x46a6585a0Ad1750d37B4e6810EB59cBDf591Dc30'
-        : name === 'azusd'
-          ? '0x5966cd11aED7D68705C9692e74e5688C892cb162'
-          : null;
-      await this.stakeToken(name, override);
-    }
-    await this.checkWalletStatus();
-    console.log(`<<< Finished ${this.address}`);
-  }
-}
-
-async function runAllBots() {
-  console.log('=== Starting multi-account bot ===');
-  const keys = getPrivateKeys();
-  const proxiesList = loadProxiesFromFile('proxies.txt');
-  for (let i = 0; i < keys.length; i++) {
-    const proxy = proxiesList.length > 0 ? proxiesList[i % proxiesList.length] : null;
-    console.log(`\n--- Account ${i+1}/${keys.length}, proxy: ${proxy} ---`);
-    const bot = new WalletBot(keys[i], globalConfig, proxy);
-    try {
-      const { data: ip } = await bot.http.get('https://api.ipify.org?format=json');
-      console.log(`Account ${i+1} (${bot.address}) using IP: ${ip.ip}`);
-    } catch (e) {
-      console.error(`Error fetching IP for account ${i+1}:`, e.message);
-    }
-    await bot.runBot();
-    await bot.delay(globalConfig.delayMs);
-  }
-  console.log('=== All accounts done ===');
-}
-
-runAllBots()
-  .then(() => console.log('Execution finished'))
-  .catch(e => console.error('Error:', e));
-
-setInterval(runAllBots, 24 * 60 * 60 * 1000);
+      await sendReport(formatStakingship... truncated due to length
