@@ -121,7 +121,7 @@ class WalletBot {
     return ethers.utils.formatEther(balance);
   }
 
-  async swapToken(name) {
+    async swapToken(name) {
     const tokenAddr = this.config.tokens[name];
     const routerAddr = this.config.routers[name];
     if (!routerAddr) return;
@@ -132,6 +132,48 @@ class WalletBot {
       console.log(`⚠️ Skip swap ${symbol}, balance = 0`);
       return;
     }
+
+    console.log(`🔁 Swapping ${formatted} ${symbol}`);
+    const tokenContract = new ethers.Contract(tokenAddr, erc20Abi, this.wallet);
+
+    // Reset allowance to zero for non-standard tokens if needed
+    try {
+      const currentAllowance = await tokenContract.allowance(this.address, routerAddr);
+      if (!currentAllowance.isZero()) {
+        console.log('   🔄 Resetting previous allowance to 0');
+        const resetTx = await tokenContract.approve(routerAddr, 0, { gasLimit: this.config.gasLimit, gasPrice: this.config.gasPrice });
+        await resetTx.wait();
+        console.log('   ✅ Allowance reset');
+      }
+    } catch (e) {
+      console.warn('   ⚠️ Could not reset allowance:', e.message);
+    }
+
+    // Approve full balance
+    let approveTx;
+    try {
+      approveTx = await tokenContract.approve(routerAddr, raw, { gasLimit: this.config.gasLimit, gasPrice: this.config.gasPrice });
+      console.log(`   Approve hash: ${approveTx.hash}`);
+      await approveTx.wait();
+      console.log('   ✅ Approved');
+    } catch (e) {
+      console.error(`❌ Approve failed for ${symbol}:`, e.error?.data || e.message);
+      return;
+    }
+
+    // Execute swap
+    await this.delay(this.config.delayMs);
+    const swapAbi = [`function ${name}Swap(uint256 amount)`];
+    const swapContract = new ethers.Contract(routerAddr, swapAbi, this.wallet);
+    try {
+      const swapTx = await swapContract[`${name}Swap`](raw, { gasLimit: this.config.gasLimit, gasPrice: this.config.gasPrice });
+      console.log(`   Swap tx hash: ${swapTx.hash}`);
+      await swapTx.wait();
+      console.log(`✅ Swapped ${formatted} ${symbol}`);
+    } catch (e) {
+      console.error(`❌ swapToken error for ${symbol}:`, e.error?.data || e.message);
+    }
+  }
 
     console.log(`🔁 Swapping ${formatted} ${symbol}`);
     const tokenContract = new ethers.Contract(tokenAddr, erc20Abi, this.wallet);
