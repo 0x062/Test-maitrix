@@ -25,17 +25,23 @@ const config = {
   gasLimit: 1000000,
   gasPrice: ethers.utils.parseUnits('0.1', 'gwei'),
   delayMs: 15000,
+  // Daftar alamat token ERC-20 yang akan dicek dan dioperasikan
   tokens: {
     virtual: '0xFF27D611ab162d7827bbbA59F140C1E7aE56e95C',
     ath:     '0x1428444Eacdc0Fd115dd4318FcE65B61Cd1ef399',
     vnusd:   '0xBEbF4E25652e7F23CCdCCcaaCB32004501c4BfF8',
-    // Tambahkan alamat token lain jika perlu
+    ausd:    '0x78De28aABBD5198657B26A8dc9777f441551B477',    // Tambahkan alamat token AUSd
+    usde:    '0xf4BE938070f59764C85fAcE374F92A4670ff3877>',    // Tambahkan alamat token USDe
+    lvlusd:  '0x8802b7bcF8EedCc9E1bA6C20E139bEe89dd98E83>',  // Tambahkan alamat token LVLUSD
+    vusd:    '0xc14A8E2Fc341A97a57524000bF0F7F1bA4de4802>'     // Tambahkan alamat token VUSD
   },
+  // Kontrak router untuk swap
   routers: {
     virtual: '0x3dCACa90A714498624067948C092Dd0373f08265',
     ath:     '0x2cFDeE1d5f04dD235AEA47E1aD2fB66e3A61C13e',
     vnusd:   '0xEfbAE3A68b17a61f21C7809Edfa8Aa3CA7B2546f'
   },
+  // Kontrak staking untuk tiap token
   stakes: {
     ausd:    '0x054de909723ECda2d119E31583D40a52a332f85c',
     usde:    '0x3988053b7c748023a1ae19a8ed4c1bf217932bdb',
@@ -43,6 +49,7 @@ const config = {
     vusd:    '0x5bb9Fa02a3DCCDB4E9099b48eBa5841D2e59d51',
     vnusd:   '0x2608A88219BFB34519f635Dd9Ca2Ae971539ca60'
   },
+  // ID metode (function selectors) untuk swap dan stake
   methodIds: {
     virtual: '0xa6d67510',
     ath:     '0x1bf6318b',
