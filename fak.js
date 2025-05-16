@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const fetch = require('node-fetch');
+const fetch = require('node-fetch').default; // fixed import for node-fetch v3
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { SocksProxyAgent } = require('socks-proxy-agent');
 const { ethers } = require('ethers');
@@ -8,16 +8,24 @@ const axios = require('axios');
 const { sendReport } = require('./telegramReporter');
 require('dotenv').config();
 
+console.log('🔥 Starting WalletBot...');
+
 function loadProxiesFromFile(filename = 'proxies.txt') {
   const p = path.resolve(__dirname, filename);
   if (!fs.existsSync(p)) return [];
-  return fs.readFileSync(p, 'utf8').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  return fs.readFileSync(p, 'utf8')
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(Boolean);
 }
 
 function loadPrivateKeysFromFile(filename = 'private_keys.txt') {
   const p = path.resolve(__dirname, filename);
   if (!fs.existsSync(p)) return [];
-  return fs.readFileSync(p, 'utf8').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  return fs.readFileSync(p, 'utf8')
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(Boolean);
 }
 
 function formatStakingReport(token, amount, tx) {
@@ -45,7 +53,7 @@ const globalConfig = {
     ausd: '0x054de909723ECda2d119E31583D40a52a332f85c',
     usde: '0x3988053b7c748023a1ae19a8ed4c1bf217932bdb',
     lvlusd: '0x5De3fBd40D4c3892914c3b67b5B529D776A1483A',
-    vusd: '0x5bb9Fa02a3DCCDB4E9099b48e8Ba5841D2e59d51',
+    vusd: '0x5bb9Fa02a3DCCDB4E9099b48eBa5841D2e59d51',
     vnusd: '0x2608A88219BFB34519f635Dd9Ca2Ae971539ca60'
   },
   methodIds: {
@@ -69,14 +77,20 @@ const erc20Abi = [
 class WalletBot {
   constructor(key, cfg, proxy) {
     const agent = proxy && (proxy.startsWith('socks') ? new SocksProxyAgent(proxy) : new HttpsProxyAgent(proxy));
-    this.provider = agent ? new ethers.providers.JsonRpcProvider({ url: cfg.rpc, fetch: (u, o) => fetch(u, { agent, ...o }) }) : new ethers.providers.JsonRpcProvider(cfg.rpc);
-    this.http = agent ? axios.create({ httpAgent: agent, httpsAgent: agent, timeout: 10000 }) : axios;
+    this.provider = agent
+      ? new ethers.providers.JsonRpcProvider({ url: cfg.rpc, fetch: (u, o) => fetch(u, { agent, ...o }) })
+      : new ethers.providers.JsonRpcProvider(cfg.rpc);
+    this.http = agent
+      ? axios.create({ httpAgent: agent, httpsAgent: agent, timeout: 10000 })
+      : axios;
     this.wallet = new ethers.Wallet(key, this.provider);
     this.address = this.wallet.address;
     this.cfg = cfg;
     console.log('🟢 Inited', this.address, 'via proxy', proxy || 'none');
   }
+
   delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
   async getTokenBalance(addr) {
     const contract = new ethers.Contract(addr, erc20Abi, this.wallet);
     const decimals = await contract.decimals();
@@ -85,6 +99,7 @@ class WalletBot {
     const formatted = ethers.utils.formatUnits(balance, decimals);
     return { balance, formatted, symbol, contract };
   }
+
   async swapToken(name) {
     try {
       const router = this.cfg.routers[name];
@@ -109,6 +124,7 @@ class WalletBot {
       console.error('❌ swap', name, 'error:', e.message);
     }
   }
+
   async stakeToken(name) {
     try {
       const info = await this.getTokenBalance(this.cfg.tokens[name]);
@@ -132,6 +148,7 @@ class WalletBot {
       console.error('❌ stake', name, 'error:', e.message);
     }
   }
+
   async claimFaucets() {
     const eps = [
       'https://app.x-network.io/maitrix-faucet/faucet',
@@ -146,20 +163,33 @@ class WalletBot {
       await this.delay(this.cfg.delayMs);
     }
   }
+
   async runBot() {
     await this.claimFaucets();
     for (const n of Object.keys(this.cfg.tokens)) await this.swapToken(n);
     for (const n of Object.keys(this.cfg.stakeContracts)) await this.stakeToken(n);
   }
 }
+
 (async function main() {
-  const keys = loadPrivateKeysFromFile();
-  if (keys.length === 0) return;
-  const prots = loadProxiesFromFile();
-  for (let i = 0; i < keys.length; i++) {
-    const bot = new WalletBot(keys[i], globalConfig, prots[i % prots.length] || null);
-    try { await bot.http.get('https://api.ipify.org?format=json'); } catch {};
-    await bot.runBot();
-    await bot.delay(globalConfig.delayMs);
+  try {
+    const keys = loadPrivateKeysFromFile();
+    console.log('Loaded private keys:', keys.length);
+    if (keys.length === 0) {
+      console.error('❌ private_keys.txt kosong atau tidak ditemukan!');
+      return;
+    }
+
+    const prots = loadProxiesFromFile();
+    console.log('Loaded proxies:', prots.length);
+
+    for (let i = 0; i < keys.length; i++) {
+      const bot = new WalletBot(keys[i], globalConfig, prots[i % prots.length] || null);
+      try { await bot.http.get('https://api.ipify.org?format=json'); } catch {};
+      await bot.runBot();
+      await bot.delay(globalConfig.delayMs);
+    }
+  } catch (err) {
+    console.error('❌ Fatal error di main():', err);
   }
 })();
