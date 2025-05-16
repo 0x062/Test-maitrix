@@ -55,7 +55,7 @@ const globalConfig = {
     usde:   '0x3988053b7c748023a1ae19a8ed4c1bf217932bdb',
     lvlusd: '0x5De3fBd40D4c3892914c3b67b5B529D776A1483A',
     vusd:   '0x5bb9Fa02a3DCCDB4E9099b48e8Ba5841D2e59d51',
-    hnusd:  '0x2608A88219BFB34519f635Dd9Ca2Ae971539ca60'
+    vnusd:  '0x2608A88219BFB34519f635Dd9Ca2Ae971539ca60'
   },
   methodIds: {
     virtualSwap: '0xa6d67510',
@@ -167,4 +167,37 @@ class WalletBot {
       usde:    'https://app.x-network.io/maitrix-usde/faucet',
       lvlusd:  'https://app.x-network.io/maitrix-lvl/faucet',
       virtual: 'https://app.x-network.io/maitrix-virtual/faucet',
-      vana:    'https://app.x-network.io/maitrix-vana/fapi`
+      vana:    'https://app.x-network.io/maitrix-vana/faucet',
+      ai16z:   'https://app.x-network.io/maitrix-ai16z/faucet'
+    };
+    for (const [tk, url] of Object.entries(endpoints)) {
+      try {
+        const res = await this.http.post(url, { address: this.address });
+        console.log(`💧 [${this.address}] Claimed faucet ${tk}: HTTP ${res.status}`);
+      } catch (e) {
+        console.log(`❌ [${this.address}] Faucet ${tk} error: ${e.message}`);
+      }
+      await this.delay(this.cfg.delayMs);
+    }
+  }
+
+  async runBot() {
+    await this.claimFaucets();
+    for (const name of Object.keys(this.cfg.tokens)) await this.swapToken(name);
+    for (const name of Object.keys(this.cfg.stakeContracts)) await this.stakeToken(name);
+  }
+}
+
+(async function main() {
+  const keys = loadPrivateKeysFromFile();
+  console.log(`🔑 Loaded ${keys.length} private key(s) from file`);
+  if (keys.length === 0) return;
+  const proxies = loadProxiesFromFile();
+  console.log(`🛡️ Loaded ${proxies.length} proxy entries`);
+
+  for (let i = 0; i < keys.length; i++) {
+    console.log(`🚀 Starting bot for account ${i + 1}`);
+    const proxy = proxies[i % proxies.length] || null;
+    const bot = new WalletBot(keys[i], globalConfig, proxy);
+    try {
+      const ip = await bot.http.get('https://api.ipify.org?format=json');
