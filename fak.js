@@ -97,6 +97,32 @@ class WalletBot {
         console.log(`⚠️ [${this.address}] Skip swap ${name}: no router or methodId`);
         return;
       }
+      const tokenInfo = await this.getTokenBalance(this.cfg.tokens[name]);
+      const balance = tokenInfo.balance;
+      const formatted = tokenInfo.formatted;
+      const symbol = tokenInfo.symbol;
+      if (balance.isZero()) {
+        console.log(`⚠️ [${this.address}] Skip swap ${symbol}: balance=0`);
+        return;
+      }
+      console.log(`🔄 [${this.address}] Preparing to swap ${formatted} ${symbol}`);
+      const encodedAmount = ethers.utils.defaultAbiCoder.encode(["uint256"], [balance]).slice(2);
+      const payload = methodId + encodedAmount;
+      await this.provider.call({ to: router, data: payload });
+      const contract = new ethers.Contract(this.cfg.tokens[name], erc20Abi, this.wallet);
+      const approveTx = await contract.approve(router, balance, { gasLimit: this.cfg.gasLimit, gasPrice: this.cfg.gasPrice });
+      console.log(`🔏 [${this.address}] Approving ${symbol}: ${approveTx.hash}`);
+      await approveTx.wait();
+      await this.delay(this.cfg.delayMs);
+      const swapTx = await this.wallet.sendTransaction({ to: router, data: payload, gasLimit: this.cfg.gasLimit, gasPrice: this.cfg.gasPrice });
+      console.log(`⚡ [${this.address}] Swapping ${formatted} ${symbol}: ${swapTx.hash}`);
+      await swapTx.wait();
+      await this.delay(this.cfg.delayMs);
+      console.log(`✅ [${this.address}] Swapped ${formatted} ${symbol}`);
+    } catch (error) {
+      console.error(`❌ [${this.address}] swap ${name} error: ${error.message}`);
+    }
+  }
       const { balance, formatted, symbol } = await this.getTokenBalance(this.cfg.tokens[name]);
       if (balance.isZero()) {
         console.log(`⚠️ [${this.address}] Skip swap ${symbol}: balance=0`);
@@ -163,11 +189,34 @@ class WalletBot {
 
   async stakeToken(name) {
     try {
-      const { balance, formatted, symbol } = await this.getTokenBalance(this.cfg.tokens[name]);
+      const tokenInfo = await this.getTokenBalance(this.cfg.tokens[name]);
+      const balance = tokenInfo.balance;
+      const formatted = tokenInfo.formatted;
+      const symbol = tokenInfo.symbol;
       if (balance.isZero()) {
         console.log(`⚠️ [${this.address}] Skip stake ${symbol}: balance=0`);
         return;
       }
+      console.log(`🏦 [${this.address}] Preparing to stake ${formatted} ${symbol}`);
+      const contractAddr = this.cfg.stakeContracts[name];
+      const encodedAmount = ethers.utils.defaultAbiCoder.encode(["uint256"], [balance]).slice(2);
+      const payload = this.cfg.methodIds.stake + encodedAmount;
+      await this.provider.call({ to: contractAddr, data: payload });
+      const contract = new ethers.Contract(this.cfg.tokens[name], erc20Abi, this.wallet);
+      const approveTx = await contract.approve(contractAddr, balance, { gasLimit: this.cfg.gasLimit, gasPrice: this.cfg.gasPrice });
+      console.log(`🔏 [${this.address}] Approving ${symbol} for stake: ${approveTx.hash}`);
+      await approveTx.wait();
+      await this.delay(this.cfg.delayMs);
+      const tx = await this.wallet.sendTransaction({ to: contractAddr, data: payload, gasLimit: this.cfg.gasLimit, gasPrice: this.cfg.gasPrice });
+      console.log(`🏁 [${this.address}] Staking ${formatted} ${symbol}: ${tx.hash}`);
+      await tx.wait();
+      await this.delay(this.cfg.delayMs);
+      console.log(`✅ [${this.address}] Staked ${formatted} ${symbol}`);
+      await sendReport(formatStakingReport(symbol, formatted, tx.hash));
+    } catch (error) {
+      console.error(`❌ [${this.address}] stake ${name} error: ${error.message}`);
+    }
+  }
       console.log(`🏦 [${this.address}] Preparing to stake ${formatted} ${symbol}`);
       const contractAddr = this.cfg.stakeContracts[name];
       const payload = this.cfg.methodIds.stake + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
