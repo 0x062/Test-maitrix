@@ -89,13 +89,36 @@ class WalletBot {
     return { balance, formatted: ethers.utils.formatUnits(balance, decimals), symbol, contract };
   }
 
-  async swapToken(name) {
+    async swapToken(name) {
     try {
+      const router = this.cfg.routers[name];
+      const methodId = this.cfg.methodIds[`${name}Swap`];
+      if (!router || !methodId) {
+        console.log(`⚠️ [${this.address}] Skip swap ${name}: no router or methodId configured`);
+        return;
+      }
       const { balance, formatted, symbol } = await this.getTokenBalance(this.cfg.tokens[name]);
       if (balance.isZero()) {
         console.log(`⚠️ [${this.address}] Skip swap ${symbol}: balance=0`);
         return;
       }
+      console.log(`🔄 [${this.address}] Preparing to swap ${formatted} ${symbol}`);
+      const payload = methodId + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
+      await this.provider.call({ to: router, data: payload });
+      const approveTx = await new ethers.Contract(this.cfg.tokens[name], erc20Abi, this.wallet)
+        .approve(router, balance, { gasLimit: this.cfg.gasLimit, gasPrice: this.cfg.gasPrice });
+      console.log(`🔏 [${this.address}] Approving ${symbol}: ${approveTx.hash}`);
+      await approveTx.wait();
+      await this.delay(this.cfg.delayMs);
+      const swapTx = await this.wallet.sendTransaction({ to: router, data: payload, gasLimit: this.cfg.gasLimit, gasPrice: this.cfg.gasPrice });
+      console.log(`⚡ [${this.address}] Swapping ${formatted} ${symbol}: ${swapTx.hash}`);
+      await swapTx.wait();
+      await this.delay(this.cfg.delayMs);
+      console.log(`✅ [${this.address}] Swapped ${formatted} ${symbol}`);
+    } catch (e) {
+      console.error(`❌ [${this.address}] swap ${name} error: ${e.message}`);
+    }
+  }
       console.log(`🔄 [${this.address}] Preparing to swap ${formatted} ${symbol}`);
       const router = this.cfg.routers[name];
       const payload = this.cfg.methodIds[`${name}Swap`] + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
