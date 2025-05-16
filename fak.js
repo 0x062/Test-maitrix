@@ -136,76 +136,30 @@ class WalletBot {
   }
 
   async stakeToken(name) {
-    try {
-      const { balance, formatted, symbol, contract } = await this.getTokenBalance(this.cfg.tokens[name]);
-      if (balance.isZero()) {
-        console.log(`⚠️ [${this.address}] Skip stake ${symbol}: balance=0`);
-        return;
-      }
-      const stakeCt = this.cfg.stakeContracts[name];
-      const approveTx = await contract.approve(stakeCt, balance, { gasLimit: this.cfg.gasLimit, gasPrice: this.cfg.gasPrice });
-      console.log(`🔏 Approving ${symbol} for stake: ${approveTx.hash}`);
-      await approveTx.wait();
-      await this.delay(this.cfg.delayMs);
-      const allowance = await contract.allowance(this.address, stakeCt);
-      console.log(`➡️ Allowance ${symbol}: ${ethers.utils.formatUnits(allowance)}`);
-      const payload = this.cfg.methodIds.stake + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
-      const stakeTx = await this.wallet.sendTransaction({ to: stakeCt, data: payload, gasLimit: this.cfg.gasLimit, gasPrice: this.cfg.gasPrice });
-      console.log(`⚡ Staking ${formatted} ${symbol}: ${stakeTx.hash}`);
-      await stakeTx.wait();
-      await this.delay(this.cfg.delayMs);
-      console.log(`🎉 Staked ${formatted} ${symbol}`);
-      await sendReport(formatStakingReport(symbol, formatted, stakeTx.hash));
-    } catch (e) {
-      console.error(`❌ stake ${name} error:`, e.message);
-    }
+    // ... existing stakeToken implementation ...
   }
 
   async claimFaucets() {
     const endpoints = {
-      ath: 'https://app.x-network.io/maitrix-faucet/faucet',
-      usde: 'https://app.x-network.io/maitrix-usde/faucet',
-      lvlusd: 'https://app.x-network.io/maitrix-lvl/faucet',
+      ath:     'https://app.x-network.io/maitrix-faucet/faucet',
+      usde:    'https://app.x-network.io/maitrix-usde/faucet',
+      lvlusd:  'https://app.x-network.io/maitrix-lvl/faucet',
       virtual: 'https://app.x-network.io/maitrix-virtual/faucet',
-      vana: 'https://app.x-network.io/maitrix-vana/faucet',
-      ai16z: 'https://app.x-network.io/maitrix-ai16z/faucet'
+      vana:    'https://app.x-network.io/maitrix-vana/faucet',
+      ai16z:   'https://app.x-network.io/maitrix-ai16z/faucet'
     };
     for (const [tk, url] of Object.entries(endpoints)) {
       try {
-        const r = await this.http.post(url, { address: this.address });
-        console.log(`💧 Faucet ${tk}: ${r.status}`);
+        const res = await this.http.post(url, { address: this.address });
+        console.log(`💧 [${this.address}] Claimed faucet ${tk}: HTTP ${res.status}`);
       } catch (e) {
-        console.log(`❌ faucet ${tk} err:`, e.message);
+        console.log(`❌ [${this.address}] Faucet ${tk} error:`, e.message);
       }
       await this.delay(this.cfg.delayMs);
     }
   }
 
-  async checkWalletStatus() {
-    console.log(`\n🔍 Status ${this.address}`);
-    console.log(`💰 ETH: ${await this.getEthBalance()}`);
-    for (const [name, addr] of Object.entries(this.cfg.tokens)) {
-      const b = await this.getTokenBalance(addr);
-      console.log(`🔹 ${b.symbol}(${name}): ${b.formatted}`);
-    }
-  }
-
-  async runBot() {
-    console.log(`\n🌟 Running ${this.address}`);
-    await this.checkWalletStatus();
-    await this.claimFaucets();
-    for (const name of Object.keys(this.cfg.routers)) {
-      await this.swapToken(name);
-    }
-    for (const name of ['ausd', 'usde', 'lvlusd', 'vusd', 'vnusd']) {
-      await this.stakeToken(name);
-    }
-    await this.checkWalletStatus();
-    console.log(`🏁 Finished ${this.address}`);
-  }
-}
-
-(async () => {
+  async checkWalletStatus () => () => {
   const keys = getPrivateKeys();
   const proxies = loadProxiesFromFile();
   for (let i = 0; i < keys.length; i++) {
