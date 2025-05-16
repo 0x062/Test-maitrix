@@ -95,6 +95,7 @@ class WalletBot {
   }
 
   // Swap logic matching original
+    // Swap logic matching original
   async swapToken(n) {
     try {
       const ip = await this.http.get('https://api.ipify.org?format=json');
@@ -117,11 +118,17 @@ class WalletBot {
       await this.delay(globalConfig.delayMs);
       console.log(`✅ Swapped ${formatted} ${symbol}`);
     } catch (e) {
-      console.log(`❌ swap ${n} err:`, e.message);
+      if (e.message && e.message.includes('execution reverted')) {
+        console.log(`⚠️ Skip swap ${n}: execution reverted`);
+      } else {
+        console.log(`❌ swap ${n} err:`, e.message);
+      }
     }
+  }
   }
 
   // Stake logic matching original
+    // Stake logic matching original
   async stakeToken(n, overrideAddr) {
     try {
       const tokenAddr = overrideAddr || globalConfig.tokens[n];
@@ -131,6 +138,28 @@ class WalletBot {
         console.log(`⚠️ [${this.address}] Skip stake ${symbol}: balance=0`);
         return;
       }
+      const contract = new ethers.Contract(tokenAddr, erc20Abi, this.wallet);
+      const approveTx = await contract.approve(stakeCt, balance, { gasLimit: globalConfig.gasLimit, gasPrice: globalConfig.gasPrice });
+      console.log(`🔏 [${this.address}] Approving ${symbol}: TxHash ${approveTx.hash}`);
+      await approveTx.wait();
+      await this.delay(globalConfig.delayMs);
+      const allowance = await contract.allowance(this.address, stakeCt);
+      console.log(`➡️ [${this.address}] Allowance for ${symbol}: ${ethers.utils.formatUnits(allowance)}`);
+      const data = globalConfig.methodIds.stake + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
+      const stakeTx = await this.wallet.sendTransaction({ to: stakeCt, data, gasLimit: globalConfig.gasLimit, gasPrice: globalConfig.gasPrice });
+      console.log(`⚡ [${this.address}] Staking ${formatted} ${symbol}: TxHash:${stakeTx.hash}`);
+      await stakeTx.wait();
+      await this.delay(globalConfig.delayMs);
+      console.log(`✅ [${this.address}] Staked ${formatted} ${symbol}`);
+      await sendReport(formatStakingReport(symbol, formatted, stakeTx.hash));
+    } catch (e) {
+      if (e.message && e.message.includes('execution reverted')) {
+        console.log(`⚠️ Skip stake ${n}: execution reverted`);
+      } else {
+        console.log(`❌ stake ${n} err:`, e.message);
+      }
+    }
+  }
       const contract = new ethers.Contract(tokenAddr, erc20Abi, this.wallet);
       const approveTx = await contract.approve(stakeCt, balance, { gasLimit: globalConfig.gasLimit, gasPrice: globalConfig.gasPrice });
       console.log(`🔏 [${this.address}] Approving ${symbol}: TxHash ${approveTx.hash}`);
@@ -172,10 +201,19 @@ class WalletBot {
     console.log('-- claimFaucets done');
   }
 
-  async runBot() {
-    console.log(`\n🌟 Running ${this.address}`);
+    async runBot() {
+    console.log(`
+🌟 Running ${this.address}`);
     await this.claimFaucets();
-    for (const name of ['virtual','ath','vnusd','azusd']) await this.swapToken(name);
+    // Only swap tokens that have both router and corresponding method
+    for (const name of Object.keys(globalConfig.tokens)) {
+      const router = globalConfig.routers[name];
+      const methodId = globalConfig.methodIds[`${name}Swap`];
+      if (router && methodId) {
+        await this.swapToken(name);
+      }
+    }
+    // Stake all configured contracts
     for (const name of Object.keys(globalConfig.stakeContracts)) {
       const override = name === 'vnusd'
         ? '0x46a6585a0Ad1750d37B4e6810EB59cBDf591Dc30'
@@ -185,6 +223,7 @@ class WalletBot {
       await this.stakeToken(name, override);
     }
     console.log(`🏁 Finished ${this.address}`);
+  }    console.log(`🏁 Finished ${this.address}`);
   }
 }
 
