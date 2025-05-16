@@ -6,98 +6,103 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
 
-// 1️⃣ Setup debug logging ke file
-const debugStream = fs.createWriteStream(
-  path.join(__dirname, 'debugging.log'), 
-  { flags: 'a' } // append mode
-);
-
-function debugLog(...args) {
-  const timestamp = new Date().toISOString();
-  const message = args.map(arg => 
-    typeof arg === 'object' ? JSON.stringify(arg) : arg
-  ).join(' ');
-  debugStream.write(`[${timestamp}] ${message}\n`);
+// ======================== ✅ VALIDASI AWAL ========================
+// 1. Cek environment variables
+if (!process.env.PRIVATE_KEY && !process.env.PRIVATE_KEY_1) {
+  console.error("🚨 ERROR: Tidak ada private key di .env file!");
+  process.exit(1);
 }
 
-// 2️⃣ Redirect console.debug ke file
-console.debug = (...args) => {
-  debugLog('[CONSOLE.DEBUG]', ...args);
-};
+// 2. Cek dependency modules
+try {
+  require.resolve('ethers');
+  require.resolve('axios');
+} catch (e) {
+  console.error("🚨 ERROR: Module belum diinstall!", e.message);
+  console.log("Jalankan: npm install ethers axios dotenv");
+  process.exit(1);
+}
 
-// 3️⃣ Hapus semua console.log yang terkait debug
-// ... (di dalam class WalletBot) ...
+// ======================== 🛠 KONFIGURASI UTAMA ========================
+const debugStream = fs.createWriteStream(
+  path.join(__dirname, 'debugging.log'), 
+  { flags: 'a' }
+);
 
+// ======================== 🚀 CLASS WALLET BOT ========================
 class WalletBot {
   constructor(privateKey, config) {
-    this.config = config;
-    this.provider = new ethers.providers.JsonRpcProvider(config.rpc);
+    // ✅ Validasi private key
+    if (!privateKey.match(/^0x[0-9a-fA-F]{64}$/)) {
+      throw new Error("Format private key tidak valid!");
+    }
     
-    // Redirect debug provider ke file
-    this.provider.on('debug', (data) => {
-      debugLog('[RPC DEBUG]', {
-        action: data.action,
-        request: data.request
-      });
-    });
+    this.config = config;
+    
+    // ✅ Validasi RPC connection
+    try {
+      this.provider = new ethers.providers.JsonRpcProvider(config.rpc);
+    } catch (e) {
+      console.error("🚨 ERROR: Gagal terkoneksi ke RPC");
+      throw e;
+    }
     
     this.wallet = new ethers.Wallet(privateKey, this.provider);
     this.address = this.wallet.address;
+    console.log(`✔️ Wallet ${this.address.slice(0,8)}... initialized`);
   }
 
-  async swapToken(tokenName) {
-    try {
-      // Tetap tampilkan log utama di console
-      console.log(`\n--- Swap ${tokenName} for ${this.address} ---`);
-      
-      // Log debug ke file
-      debugLog(`Memulai swap ${tokenName}`, {
-        address: this.address,
-        token: this.config.tokens[tokenName]
-      });
-
-      // ... kode swap yang sama ...
-      
-      // Contoh log debug transaksi
-      debugLog(`TX swap dibuat`, {
-        hash: tx.hash,
-        nonce: tx.nonce
-      });
-
-    } catch (e) {
-      debugLog(`Error swap: ${e.message}`, e.stack);
-      throw e;
-    }
-  }
-
-  async stakeToken(tokenName, customAddr = null) {
-    try {
-      debugLog(`Memulai stake ${tokenName}`, {
-        customAddress: customAddr
-      });
-      
-      // ... kode stake yang sama ...
-
-    } catch (e) {
-      debugLog(`Error stake: ${e.message}`, {
-        token: tokenName,
-        stack: e.stack
-      });
-      throw e;
-    }
-  }
-
-  // ... method lainnya tetap sama ...
+  // ... (method lainnya tetap sama, tambahkan try-catch di tiap method) ...
 }
 
-// 4️⃣ Handle shutdown untuk close stream
-process.on('SIGINT', () => {
-  debugLog('Aplikasi dimatikan');
-  debugStream.end(() => process.exit());
+// ======================== 🏃♀️ MAIN EXECUTION ========================
+async function runAllBots() {
+  console.log("🔄 Memulai proses...");
+  
+  try {
+    const keys = getPrivateKeys();
+    console.log(`🔑 Ditemukan ${keys.length} private key`);
+    
+    for (let i = 0; i < keys.length; i++) {
+      console.log(`\n👉 Memproses wallet ${i+1}/${keys.length}`);
+      try {
+        const bot = new WalletBot(keys[i], globalConfig);
+        await bot.runBot();
+      } catch (e) {
+        console.error(`💥 Error di wallet ${i+1}:`, e.message);
+        await sendReport(`Wallet ${i+1} error: ${e.message}`);
+      }
+      await delay(2000);
+    }
+    
+    console.log("✅ Semua proses selesai");
+  } catch (e) {
+    console.error("💥 ERROR GLOBAL:", e);
+    await sendReport(`Bot crashed: ${e.message}`);
+    process.exit(1);
+  }
+}
+
+// ======================== 🚨 ERROR TRACKING ========================
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('⚠️ Unhandled Rejection:', reason);
+  debugStream.write(`UNHANDLED REJECTION: ${reason}\n`);
 });
 
-process.on('exit', () => {
-  debugStream.end();
+process.on('uncaughtException', (error) => {
+  console.error('⚠️ Uncaught Exception:', error);
+  debugStream.write(`UNCAUGHT EXCEPTION: ${error.stack}\n`);
+  process.exit(1);
 });
 
-// ... kode lainnya tetap sama tanpa perubahan ...
+// ======================== 🎬 START SCRIPT ========================
+(async () => {
+  try {
+    console.log("🪄 Script dimulai...");
+    await runAllBots();
+    console.log("⏳ Next run:", new Date(Date.now() + INTERVAL_MS).toLocaleString());
+  } catch (e) {
+    console.error("💥 Initialization error:", e);
+    process.exit(1);
+  }
+})();
