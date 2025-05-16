@@ -15,10 +15,27 @@ if (proxyAgent) {
 const globalConfig = {
   rpc: 'https://arbitrum-sepolia.gateway.tenderly.co',
   chainId: 421614,
-  tokens: { virtual: '0xFF27D611ab162d7827bbbA59F140C1E7aE56e95C', ath: '0x1428444Eacdc0Fd115dd4318FcE65B61Cd1ef399', ausd: '0x78De28aABBD5198657B26A8dc9777f441551B477', usde: '0xf4BE938070f59764C85fAcE374F92A4670ff3877', lvlusd: '0x8802b7bcF8EedCc9E1bA6C20E139bEe89dd98E83', vusd: '0xc14A8E2Fc341A97a57524000bF0F7F1bA4de4802', vnusd: '0xBEbF4E25652e7F23CCdCCcaaCB32004501c4BfF8' },
-  routers: { virtual: '0x3dCACa90A714498624067948C092Dd0373f08265', ath: '0x2cFDeE1d5f04dD235AEA47E1aD2fB66e3A61C13e', vnusd: '0xEfbAE3A68b17a61f21C7809Edfa8Aa3CA7B2546f' },
-  stakeContracts: { ausd: '0x054de909723ECda2d119E31583D40a52a332f85c', usde: '0x3988053b7c748023a1ae19a8ed4c1bf217932bdb', lvlusd: '0x5De3fBd40D4c3892914c3b67b5B529D776A1483A', vusd: '0x5bb9Fa02a3DCCDB4E9099b48e8Ba5841D2e59d51', vnusd: '0x2608A88219BFB34519f635Dd9Ca2Ae971539ca60' },
-  methodIds: { virtualSwap: '0xa6d67510', athSwap: '0x1bf6318b', vnusdSwap: '0xa6d67510', stake: '0xa694fc3a' },
+  tokens: {
+    virtual: '0xFF27D611ab162d7827bbbA59F140C1E7aE56e95C',
+    ath:     '0x1428444Eacdc0Fd115dd4318FcE65B61Cd1ef399',
+    ausd:    '0x78De28aABBD5198657B26A8dc9777f441551B477',
+    usde:    '0xf4BE938070f59764C85fAcE374F92A4670ff3877',
+    lvlusd:  '0x8802b7bcF8EedCc9E1bA6C20E139bEe89dd98E83',
+    vusd:    '0xc14A8E2Fc341A97a57524000bF0F7F1bA4de4802',
+    vnusd:   '0xBEbF4E25652e7F23CCdCCcaaCB32004501c4Bf8'
+  },
+  routers: {
+    virtual: '0x3dCACa90A714498624067948C092Dd0373f08265',
+    ath:     '0x2cFDeE1d5f04dD235AEA47E1aD2fB66e3A61C13e',
+    vnusd:   '0xEfbAE3A68b17a61f21C7809Edfa8Aa3CA7B2546f'
+  },
+  stakeContracts: {
+    ausd:  '0x054de909723ECda2d119E31583D40a52a332f85c',
+    usde:  '0x3988053b7c748023a1ae19a8ed4c1bf217932bdb',
+    lvlusd:'0x5De3fBd40D4c3892914c3b67b5B529D776A1483A',
+    vusd:  '0x5bb9Fa02a3DCCDB4E9099b48e8Ba5841D2e59d51',
+    vnusd: '0x2608A88219BFB34519f635Dd9Ca2Ae971539ca60'
+  },
   gasLimit: 1000000,
   gasPrice: ethers.utils.parseUnits('0.1', 'gwei'),
   delayMs: 17000
@@ -86,7 +103,6 @@ class WalletBot {
     try {
       const addr = this.config.tokens[name];
       const router = this.config.routers[name];
-      const id = this.config.methodIds[`${name}Swap`];
       const { balance, formatted, symbol } = await this.getTokenBalance(addr);
       console.log(`↔️ Checking ${symbol}: ${formatted}`);
       if (balance.isZero()) { console.log(`⚠️ Skip swap ${symbol}, balance = 0`); return; }
@@ -97,9 +113,9 @@ class WalletBot {
       await approveTx.wait();
       console.log('   ✅ Approved');
       await this.delay(this.config.delayMs);
-      const data = id + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
-      console.log('📡 Swap tx data:', data);
-      const tx = await this.wallet.sendTransaction({ to: router, data, gasLimit: this.config.gasLimit, gasPrice: this.config.gasPrice });
+      const data = await this.wallet.populateTransaction({ to: router, data: approveTx.data });
+      console.log('📡 Swap tx data:', data.data);
+      const tx = await this.wallet.sendTransaction({ to: router, data: data.data, gasLimit: this.config.gasLimit, gasPrice: this.config.gasPrice });
       console.log(`   Swap tx hash: ${tx.hash}`);
       await tx.wait();
       console.log(`✅ Swapped ${formatted} ${symbol}`);
@@ -110,7 +126,8 @@ class WalletBot {
 
   async stakeToken(name, customAddr = null) {
     const tokenAddr = customAddr || this.config.tokens[name];
-    const stakeCt = this.config.stakeContracts[name];
+    const stakeCt   = this.config.stakeContracts[name];
+    const stakeAbi  = ['function stake(uint256 amount)'];
     try {
       const { balance, formatted, symbol } = await this.getTokenBalance(tokenAddr);
       console.log(`🛡️ Preparing to stake ${symbol}: ${formatted} to ${stakeCt}`);
@@ -122,15 +139,17 @@ class WalletBot {
       await approveTx.wait();
       console.log('   ✅ Approved for staking');
       await this.delay(this.config.delayMs);
-      const data = this.config.methodIds.stake + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
-      console.log('📡 Stake tx data:', data);
-      const tx = await this.wallet.sendTransaction({ to: stakeCt, data, gasLimit: this.config.gasLimit, gasPrice: this.config.gasPrice });
+
+      console.log('🔨 Staking via contract ABI');
+      const stakeContract = new ethers.Contract(stakeCt, stakeAbi, this.wallet);
+      const tx = await stakeContract.stake(balance, { gasLimit: this.config.gasLimit, gasPrice: this.config.gasPrice });
       console.log(`   Stake tx hash: ${tx.hash}`);
       await tx.wait();
       console.log(`🎉 Staked ${formatted} ${symbol}`);
       await sendReport(`🚀 *Staked!* ${symbol} ${formatted} (${tx.hash})`);
     } catch (e) {
-      console.error(`❌ stakeToken error for ${name}:`, e.message || e);
+      console.error(`❌ stakeToken error for ${
+ name }:`, e.message || e);
       if (e.error && e.error.data) console.error('   RPC revert data:', e.error.data);
     }
   }
@@ -145,11 +164,19 @@ class WalletBot {
   }
 
   async claimFaucets() {
-    const endpoints = { ath: 'https://app.x-network.io/maitrix-faucet/faucet', usde: 'https://app.x-network.io/maitrix-usde/faucet', lvlusd: 'https://app.x-network.io/maitrix-lvl/faucet', virtual: 'https://app.x-network.io/maitrix-virtual/faucet', vana: 'https://app.x-network.io/maitrix-vana/faucet' };
+    const endpoints = {
+      ath:     'https://app.x-network.io/maitrix-faucet/faucet',
+      usde:    'https://app.x-network.io/maitrix-usde/faucet',
+      lvlusd:  'https://app.x-network.io/maitrix-lvl/faucet',
+      virtual: 'https://app.x-network.io/maitrix-virtual/faucet',
+      vana:    'https://app.x-network.io/maitrix-vana/faucet'
+    };
+    console.log('🚰 Starting faucets');
     for (let [k,u] of Object.entries(endpoints)) {
       try { await axios.post(u, { address: this.address }); console.log(`✔️ Faucet ${k}`); } catch { console.error(`❌ Faucet ${k} failed`); }
       await this.delay(this.config.delayMs);
     }
+    console.log('🚰 Finished faucets');
   }
 
   async runBot() {
@@ -165,7 +192,7 @@ class WalletBot {
 }
 
 (async()=>{
-  console.log('🚀 Multi-bot start');
+n  console.log('🚀 Multi-bot start');
   const keys = getPrivateKeys();
   if (!keys.length) return console.error('❌ No keys');
   for (let k of keys) {
