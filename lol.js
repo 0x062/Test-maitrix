@@ -18,7 +18,7 @@ function loadList(filename) {
 }
 
 const privateKeys = loadList('private_keys.txt');
-const proxyList = loadList('proxies.txt'); // proxies one per line
+const proxyList = loadList('proxies.txt');
 
 const config = {
   rpc: 'https://arbitrum-sepolia.gateway.tenderly.co',
@@ -40,8 +40,8 @@ const config = {
     vnusd:   '0xEfbAE3A68b17a61f21C7809Edfa8Aa3CA7B2546f'
   },
   stakes: {
-    virtual: '0x<VIRTUAL_STAKE_CONTRACT>', // replace with actual
-    ath:     '0x<ATH_STAKE_CONTRACT>',      // replace with actual
+    virtual: '0x<VIRTUAL_STAKE_CONTRACT>',
+    ath:     '0x<ATH_STAKE_CONTRACT>',
     vnusd:   '0x2608A88219BFB34519f635Dd9Ca2Ae971539ca60',
     ausd:    '0x054de909723ECda2d119E31583D40a52a332f85c',
     usde:    '0x3988053b7c748023a1ae19a8ed4c1bf217932bdb',
@@ -51,8 +51,7 @@ const config = {
   methodIds: {
     virtual: '0xa6d67510',
     ath:     '0x1bf6318b',
-    vnusd:   '0xa6d67510',
-    stake:   '0xa694fc3a'
+    vnusd:   '0xa6d67510'
   },
   minStake: {
     virtual: '0.01',
@@ -71,6 +70,8 @@ const erc20Abi = [
   'function symbol() view returns (string)',
   'function approve(address,uint256) returns (bool)'
 ];
+// ABI for stake contracts (assumes stake(uint256) exists)
+const stakeAbi = [ 'function stake(uint256) returns (bool)' ];
 
 class WalletBot {
   constructor(key, proxyUrl) {
@@ -88,21 +89,15 @@ class WalletBot {
     this.wallet = new ethers.Wallet(key, this.provider);
     this.address = this.wallet.address;
     console.log(`\n🟢 Wallet: ${this.address}`);
-    if (agent) console.log(`🌐 Using Proxy: ${proxyUrl}`);
+    if (agent) console.log(`🌐 Proxy: ${proxyUrl}`);
   }
 
   delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
   async logProxyIp() {
     if (this.http !== axios) {
-      try {
-        const { data } = await this.http.get('https://api.ipify.org?format=json');
-        console.log(`🌐 External IP: ${data.ip}`);
-      } catch (e) {
-        console.log(`⚠️ IP fetch error: ${e.message}`);
-      }
-    } else {
-      console.log('ℹ️ Direct connection');
+      try { const { data } = await this.http.get('https://api.ipify.org?format=json'); console.log(`🌐 IP: ${data.ip}`); }
+      catch (e) { console.log(`⚠️ IP error: ${e.message}`); }
     }
   }
 
@@ -124,24 +119,25 @@ class WalletBot {
         const { contract, balance, formatted, symbol, decimals } = await this.getToken(name);
         console.log(`🔍 ${symbol}: ${formatted}`);
 
-        // SWAP ALL-IN if router exists
-        if (config.routers[name] && balance.gt(0)) {
+        // Swap all-in
+        const router = config.routers[name];
+        if (router && balance.gt(0)) {
           console.log(`-- swap ${symbol} all-in`);
-          await contract.approve(config.routers[name], balance, { gasLimit: config.gasLimit, gasPrice: config.gasPrice });
-          const swapData = config.methodIds[name] + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
-          await this.wallet.sendTransaction({ to: config.routers[name], data: swapData, gasLimit: config.gasLimit, gasPrice: config.gasPrice });
+          await contract.approve(router, balance, { gasLimit: config.gasLimit, gasPrice: config.gasPrice });
+          const data = config.methodIds[name] + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
+          await this.wallet.sendTransaction({ to: router, data, gasLimit: config.gasLimit, gasPrice: config.gasPrice });
           console.log(`✅ Swapped ${symbol}`);
           await this.delay(config.delayMs);
         }
 
-        // STAKE ALL-IN if enough balance
+        // Stake all-in if meets minimum
         const stakeCt = config.stakes[name];
         const min = ethers.utils.parseUnits(config.minStake[name] || '0', decimals);
         if (stakeCt && balance.gte(min)) {
           console.log(`-- stake ${symbol} all-in`);
-          await contract.approve(stakeCt, balance, { gasLimit: config.gasLimit, gasPrice: config.gasPrice });
-          const stakeData = config.methodIds.stake + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
-          await this.wallet.sendTransaction({ to: stakeCt, data: stakeData, gasLimit: config.gasLimit, gasPrice: config.gasPrice });
+          // Use ethers Contract to call stake(), avoiding manual encoding
+          const stakeContract = new ethers.Contract(stakeCt, stakeAbi, this.wallet);
+          await stakeContract.stake(balance, { gasLimit: config.gasLimit, gasPrice: config.gasPrice });
           console.log(`✅ Staked ${symbol}`);
           await this.delay(config.delayMs);
         }
