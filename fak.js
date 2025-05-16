@@ -169,7 +169,8 @@ class WalletBot {
       virtual: 'https://app.x-network.io/maitrix-virtual/faucet',
       vana: 'https://app.x-network.io/maitrix-vana/faucet',
       ai16z: 'https://app.x-network.io/maitrix-ai16z/faucet'
-    };\n    for (const [tk, url] of Object.entries(endpoints)) {
+    };
+    for (const [tk, url] of Object.entries(endpoints)) {
       try {
         const r = await this.http.post(url, { address: this.address });
         console.log(`💧 Faucet ${tk}: ${r.status}`);
