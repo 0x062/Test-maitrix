@@ -1,8 +1,7 @@
 // multiAccountBot.js
 const fs = require('fs');
 const path = require('path');
-// Pastikan menggunakan node-fetch v2 untuk CommonJS
-const fetch = require('node-fetch');
+const fetch = require('node-fetch'); // gunakan v2 untuk CommonJS
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { SocksProxyAgent } = require('socks-proxy-agent');
 const { ethers } = require('ethers');
@@ -10,8 +9,7 @@ const axios = require('axios');
 const { sendReport } = require('./telegramReporter');
 require('dotenv').config();
 
-// Utility: load proxies from file
-function loadProxiesFromFile(filename = 'proxies.txt') {
+// Utility: load proxies from file\ nfunction loadProxiesFromFile(filename = 'proxies.txt') {
   const filePath = path.resolve(__dirname, filename);
   if (!fs.existsSync(filePath)) return [];
   const lines = fs.readFileSync(filePath, 'utf8')
@@ -22,7 +20,6 @@ function loadProxiesFromFile(filename = 'proxies.txt') {
   return lines;
 }
 
-// Format message untuk Telegram
 function formatStakingReport(token, amount, txHash) {
   return (
     `🚀🎉 *Staking Berhasil!* 🎉🚀\n` +
@@ -35,7 +32,7 @@ function formatStakingReport(token, amount, txHash) {
 const globalConfig = {
   rpc: 'https://arbitrum-sepolia.gateway.tenderly.co',
   chainId: 421614,
-  tokens: { /* ... */ },
+  tokens: { /* ... isi seperti sebelumnya ... */ },
   routers: { /* ... */ },
   stakeContracts: { /* ... */ },
   methodIds: { /* ... */ },
@@ -54,10 +51,8 @@ const erc20Abi = [
 function getPrivateKeys() {
   const privateKeys = [];
   let idx = 1;
-  while (true) {
-    const key = process.env[`PRIVATE_KEY_${idx}`];
-    if (!key) break;
-    privateKeys.push(key);
+  while (process.env[`PRIVATE_KEY_${idx}`]) {
+    privateKeys.push(process.env[`PRIVATE_KEY_${idx}`]);
     idx++;
   }
   if (privateKeys.length === 0 && process.env.PRIVATE_KEY) {
@@ -70,61 +65,119 @@ class WalletBot {
   constructor(privateKey, config, proxyUrl = null) {
     this.config = config;
     this.proxyUrl = proxyUrl;
-    console.log(`[WalletBot] Creating bot for ${privateKey.slice(-4)}, proxy: ${proxyUrl}`);
 
-    if (proxyUrl) {
-      const agent = proxyUrl.startsWith('socks')
-        ? new SocksProxyAgent(proxyUrl)
-        : new HttpsProxyAgent(proxyUrl);
+    // Setup agent jika perlu
+    const agent = proxyUrl
+      ? (proxyUrl.startsWith('socks')
+          ? new SocksProxyAgent(proxyUrl)
+          : new HttpsProxyAgent(proxyUrl))
+      : null;
 
-      this.provider = new ethers.providers.JsonRpcProvider({
-        url: config.rpc,
-        fetch: (url, opts) => fetch(url, { agent, ...opts })
-      });
-      this.http = axios.create({ httpAgent: agent, httpsAgent: agent });
-    } else {
-      this.provider = new ethers.providers.JsonRpcProvider(config.rpc);
-      this.http = axios;
-    }
+    // Provider dengan fetch override jika agent
+    this.provider = agent
+      ? new ethers.providers.JsonRpcProvider({ url: config.rpc, fetch: (url, opts) => fetch(url, { agent, ...opts }) })
+      : new ethers.providers.JsonRpcProvider(config.rpc);
 
+    // HTTP client (faucets, IP check)
+    this.http = agent
+      ? axios.create({ httpAgent: agent, httpsAgent: agent })
+      : axios;
+
+    // Wallet
     this.wallet = new ethers.Wallet(privateKey, this.provider);
     this.address = this.wallet.address;
+
+    console.log(`[WalletBot] Initialized ${this.address}, proxy: ${proxyUrl}`);
   }
 
   async delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-  async getTokenBalance(tokenAddr) { /* unchanged */ }
-  async getEthBalance() { /* unchanged */ }
+  async getTokenBalance(addr) {
+    const c = new ethers.Contract(addr, erc20Abi, this.wallet);
+    const decimals = await c.decimals();
+    const bal = await c.balanceOf(this.address);
+    const symbol = await c.symbol().catch(() => 'TOKEN');
+    return { balance: bal, decimals, formatted: ethers.utils.formatUnits(bal, decimals), symbol };
+  }
 
-  async swapToken(tokenName) {
+  async getEthBalance() {
+    const w = await this.provider.getBalance(this.address);
+    return { balance: w, formatted: ethers.utils.formatEther(w) };
+  }
+
+  async swapToken(name) {
     try {
-      // Debug IP via proxy before actions
-      const ipInfo = await this.http.get('https://api.ipify.org?format=json');
-      console.log(`[swapToken] Using IP: ${ipInfo.data.ip}`);
+      // Debug IP via proxy
+      const { data } = await this.http.get('https://api.ipify.org?format=json');
+      console.log(`[swapToken] ${this.address} uses IP: ${data.ip}`);
 
-      // existing swap logic...
+      const tokenAddr = this.config.tokens[name];
+      const router = this.config.routers[name];
+      const methodId = this.config.methodIds[`${name}Swap`];
+      if (!router || !methodId) return;
+
+      const { balance, formatted, symbol } = await this.getTokenBalance(tokenAddr);
+      if (balance.isZero()) return;
+
+      await new ethers.Contract(tokenAddr, erc20Abi, this.wallet)
+        .approve(router, balance, { gasLimit: this.config.gasLimit, gasPrice: this.config.gasPrice })
+        .then(tx => tx.wait());
+      await this.delay(this.config.delayMs);
+
+      const dataPayload = methodId + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
+      await this.wallet.sendTransaction({ to: router, data: dataPayload, gasLimit: this.config.gasLimit, gasPrice: this.config.gasPrice })
+        .then(tx => tx.wait());
+      await this.delay(this.config.delayMs);
+      console.log(`Swapped ${formatted} ${symbol}`);
     } catch (e) {
-      console.error(`swapToken error for ${tokenName}:`, e);
-      return false;
+      console.error(`swapToken error ${name}:`, e.message);
     }
   }
 
-  async stakeToken(tokenName, customAddr = null) { /* unchanged */ }
+  async stakeToken(name, custom) {
+    try {
+      const tokenAddr = custom || this.config.tokens[name];
+      const stakeCt = this.config.stakeContracts[name];
+      const { balance, formatted, symbol } = await this.getTokenBalance(tokenAddr);
+      if (!stakeCt || balance.isZero()) return;
 
-  async checkWalletStatus() { /* unchanged */ }
+      await new ethers.Contract(tokenAddr, erc20Abi, this.wallet)
+        .approve(stakeCt, balance, { gasLimit: this.config.gasLimit, gasPrice: this.config.gasPrice })
+        .then(tx => tx.wait());
+      await this.delay(this.config.delayMs);
+
+      const dataPayload = this.config.methodIds.stake + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
+      const receipt = await this.wallet.sendTransaction({ to: stakeCt, data: dataPayload, gasLimit: this.config.gasLimit, gasPrice: this.config.gasPrice })
+        .then(tx => tx.wait());
+      await this.delay(this.config.delayMs);
+
+      console.log(`Staked ${formatted} ${symbol}`);
+      await sendReport(formatStakingReport(symbol, formatted, receipt.transactionHash));
+    } catch (e) {
+      console.error(`stakeToken error ${name}:`, e.message);
+    }
+  }
 
   async claimFaucets() {
-    // use this.http for all axios calls
     const endpoints = { /* ... */ };
     for (const [tk, url] of Object.entries(endpoints)) {
-      console.log(`[claimFaucets] Claiming ${tk} via proxy: ${this.proxyUrl}`);
       try {
-        const res = await this.http.post(url, { address: this.address });
-        console.log(`status ${res.status}`);
+        const { data } = await this.http.post(url, { address: this.address });
+        console.log(`[claimFaucets] ${tk} status: ${data.status || 'success'}`);
       } catch (e) {
-        console.error(`claimFaucets ${tk} error:`, e.message);
+        console.error(`claimFaucets error ${tk}:`, e.message);
       }
       await this.delay(this.config.delayMs);
+    }
+  }
+
+  async checkWalletStatus() {
+    const eth = await this.getEthBalance();
+    console.log(`\n=== Status ${this.address} ===`);
+    console.log(`ETH: ${eth.formatted}`);
+    for (const [name, addr] of Object.entries(this.config.tokens)) {
+      const { formatted, symbol } = await this.getTokenBalance(addr);
+      console.log(`${symbol} (${name}): ${formatted}`);
     }
   }
 
@@ -132,25 +185,41 @@ class WalletBot {
     console.log(`\n>>> Running bot for ${this.address}`);
     await this.checkWalletStatus();
     await this.claimFaucets();
-    // ... rest of logic ...
+    for (const name of ['virtual', 'ath', 'vnusd', 'azusd']) {
+      await this.swapToken(name);
+    }
+    for (const name of Object.keys(this.config.stakeContracts)) {
+      const override = name === 'vnusd'
+        ? '0x46a6585a0Ad1750d37B4e6810EB59cBDf591Dc30'
+        : name === 'azusd'
+          ? '0x5966cd11aED7D68705C9692e74e5688C892cb162'
+          : null;
+      await this.stakeToken(name, override);
+    }
+    await this.checkWalletStatus();
     console.log(`<<< Finished ${this.address}`);
   }
 }
 
-// Main loop: load keys & proxies, then run
 async function runAllBots() {
   console.log('=== Starting multi-account bot ===');
 
-  const keys    = getPrivateKeys();
-  let proxies   = loadProxiesFromFile('proxies.txt');
-  while (proxies.length < keys.length) proxies.push(null);
-  if (proxies.length > keys.length) proxies.length = keys.length;
-
-  console.log('Proxies array:', proxies);
+  const keys = getPrivateKeys();
+  const proxiesList = loadProxiesFromFile('proxies.txt');
 
   for (let i = 0; i < keys.length; i++) {
-    console.log(`\n--- Account ${i+1}/${keys.length}, proxy: ${proxies[i]} ---`);
-    const bot = new WalletBot(keys[i], globalConfig, proxies[i]);
+    const proxy = proxiesList.length > 0 ? proxiesList[i % proxiesList.length] : null;
+    console.log(`\n--- Account ${i+1}/${keys.length} ---`);
+    const bot = new WalletBot(keys[i], globalConfig, proxy);
+
+    // Print IP before operations
+    try {
+      const { data } = await bot.http.get('https://api.ipify.org?format=json');
+      console.log(`Account ${i+1} (${bot.address}) using IP: ${data.ip}`);
+    } catch (e) {
+      console.error(`Error fetching IP for account ${i+1}:`, e.message);
+    }
+
     await bot.runBot();
     await bot.delay(globalConfig.delayMs);
   }
@@ -158,7 +227,6 @@ async function runAllBots() {
   console.log('=== All accounts done ===');
 }
 
-// Jalankan sekarang dan setiap 24 jam
 runAllBots()
   .then(() => console.log('Execution finished'))
   .catch(e => console.error('Error:', e));
