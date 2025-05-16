@@ -63,12 +63,12 @@ const erc20Abi = [
   'function balanceOf(address) view returns (uint256)',
   'function decimals() view returns (uint8)',
   'function approve(address,uint256) returns (bool)',
-  'function symbol() view returns (string)'  
+  'function symbol() view returns (string)'
 ];
 
 class WalletBot {
   constructor(key, cfg, proxy) {
-    const agent = proxy ? (proxy.startsWith('socks') ? new SocksProxyAgent(proxy) : new HttpsProxyAgent(proxy)) : null;
+    const agent = proxy && (proxy.startsWith('socks') ? new SocksProxyAgent(proxy) : new HttpsProxyAgent(proxy));
     this.provider = agent
       ? new ethers.providers.JsonRpcProvider({ url: cfg.rpc, fetch: (u, o) => fetch(u, { agent, ...o }) })
       : new ethers.providers.JsonRpcProvider(cfg.rpc);
@@ -78,7 +78,9 @@ class WalletBot {
     this.cfg = cfg;
     console.log(`🟢 Inited ${this.address} via proxy ${proxy || 'none'}`);
   }
+
   delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
   async getTokenBalance(addr) {
     const contract = new ethers.Contract(addr, erc20Abi, this.wallet);
     const decimals = await contract.decimals();
@@ -86,39 +88,60 @@ class WalletBot {
     const symbol = await contract.symbol().catch(() => '?');
     return { balance, formatted: ethers.utils.formatUnits(balance, decimals), symbol, contract };
   }
+
   async swapToken(name) {
     try {
       const { balance, formatted, symbol } = await this.getTokenBalance(this.cfg.tokens[name]);
-      if (balance.isZero()) return;
+      if (balance.isZero()) {
+        console.log(`⚠️ [${this.address}] Skip swap ${symbol}: balance=0`);
+        return;
+      }
+      console.log(`🔄 [${this.address}] Preparing to swap ${formatted} ${symbol}`);
       const router = this.cfg.routers[name];
       const payload = this.cfg.methodIds[`${name}Swap`] + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
       await this.provider.call({ to: router, data: payload });
       const approveTx = await new ethers.Contract(this.cfg.tokens[name], erc20Abi, this.wallet)
         .approve(router, balance, { gasLimit: this.cfg.gasLimit, gasPrice: this.cfg.gasPrice });
+      console.log(`🔏 [${this.address}] Approving ${symbol}: ${approveTx.hash}`);
       await approveTx.wait();
       await this.delay(this.cfg.delayMs);
       const swapTx = await this.wallet.sendTransaction({ to: router, data: payload, gasLimit: this.cfg.gasLimit, gasPrice: this.cfg.gasPrice });
+      console.log(`⚡ [${this.address}] Swapping ${formatted} ${symbol}: ${swapTx.hash}`);
       await swapTx.wait();
       await this.delay(this.cfg.delayMs);
-    } catch (e) {}
+      console.log(`✅ [${this.address}] Swapped ${formatted} ${symbol}`);
+    } catch (e) {
+      console.error(`❌ [${this.address}] swap ${name} error: ${e.message}`);
+    }
   }
+
   async stakeToken(name) {
     try {
-      const { balance } = await this.getTokenBalance(this.cfg.tokens[name]);
-      if (balance.isZero()) return;
+      const { balance, formatted, symbol } = await this.getTokenBalance(this.cfg.tokens[name]);
+      if (balance.isZero()) {
+        console.log(`⚠️ [${this.address}] Skip stake ${symbol}: balance=0`);
+        return;
+      }
+      console.log(`🏦 [${this.address}] Preparing to stake ${formatted} ${symbol}`);
       const contractAddr = this.cfg.stakeContracts[name];
       const payload = this.cfg.methodIds.stake + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
       await this.provider.call({ to: contractAddr, data: payload });
       const approveTx = await new ethers.Contract(this.cfg.tokens[name], erc20Abi, this.wallet)
         .approve(contractAddr, balance, { gasLimit: this.cfg.gasLimit, gasPrice: this.cfg.gasPrice });
+      console.log(`🔏 [${this.address}] Approving ${symbol} for stake: ${approveTx.hash}`);
       await approveTx.wait();
       await this.delay(this.cfg.delayMs);
       const tx = await this.wallet.sendTransaction({ to: contractAddr, data: payload, gasLimit: this.cfg.gasLimit, gasPrice: this.cfg.gasPrice });
+      console.log(`🏁 [${this.address}] Staking ${formatted} ${symbol}: ${tx.hash}`);
       await tx.wait();
       await this.delay(this.cfg.delayMs);
-      await sendReport(formatStakingReport(name, ethers.utils.formatUnits(balance, await new ethers.Contract(this.cfg.tokens[name], erc20Abi, this.wallet).decimals()), tx.hash));
-    } catch (e) {}
+      console.log(`✅ [${this.address}] Staked ${formatted} ${symbol}`);
+      await sendReport(formatStakingReport(symbol, formatted, tx.hash));
+    } catch (e) {
+      console.error(`❌ [${this.address}] stake ${name} error: ${e.message}`);
+    }
   }
+
   async claimFaucets() {
     const endpoints = {
       ath: 'https://app.x-network.io/maitrix-faucet/faucet',
@@ -128,26 +151,44 @@ class WalletBot {
       vana: 'https://app.x-network.io/maitrix-vana/faucet',
       ai16z: 'https://app.x-network.io/maitrix-ai16z/faucet'
     };
-    for (const url of Object.values(endpoints)) {
-      try { await this.http.post(url, { address: this.address }); } catch {};
+    for (const [tk, url] of Object.entries(endpoints)) {
+      try {
+        const res = await this.http.post(url, { address: this.address });
+        console.log(`💧 [${this.address}] Claimed faucet ${tk}: HTTP ${res.status}`);
+      } catch (e) {
+        console.error(`❌ [${this.address}] faucet ${tk} error: ${e.message}`);
+      }
       await this.delay(this.cfg.delayMs);
     }
   }
+
   async runBot() {
     await this.claimFaucets();
     for (const name of Object.keys(this.cfg.tokens)) await this.swapToken(name);
     for (const name of Object.keys(this.cfg.stakeContracts)) await this.stakeToken(name);
   }
 }
+
 (async function main() {
   const keys = loadPrivateKeysFromFile();
-  if (keys.length === 0) return;
+  if (keys.length === 0) {
+    console.error('❌ No private keys found');
+    return;
+  }
+  console.log(`🔑 Loaded ${keys.length} private key(s)`);
   const proxies = loadProxiesFromFile();
+  console.log(`🛡️ Loaded ${proxies.length} proxy entries`);
   for (let i = 0; i < keys.length; i++) {
     const proxy = proxies[i % proxies.length] || null;
     const bot = new WalletBot(keys[i], globalConfig, proxy);
-    try { await bot.http.get('https://api.ipify.org?format=json'); } catch {};
+    try {
+      const ip = await bot.http.get('https://api.ipify.org?format=json');
+      console.log(`🌐 [${bot.address}] IP: ${ip.data.ip}`);
+    } catch (e) {
+      console.warn(`⚠️ [${bot.address}] Could not fetch IP: ${e.message}`);
+    }
     await bot.runBot();
     await bot.delay(globalConfig.delayMs);
   }
+  console.log('✨ All done');
 })();
