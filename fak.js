@@ -310,26 +310,33 @@ class WalletBot {
 }
 
 // ======================== 🚀 MAIN EXECUTION ========================
+// ======================== 🚀 MAIN EXECUTION ========================
 (async () => {
-  // …
-  for (let i = 0; i < keys.length; i++) {
-    const key   = keys[i];
-    const proxy = proxies.length ? proxies[i % proxies.length] : null;
-    console.log(
-      `\n💼 Processing wallet ${i + 1}/${keys.length}` +
-      (proxy ? ` using proxy ${proxy}` : '')
-    );
+  try {
+    console.log('🔌 Initializing bot...');
+    
+    const keys = getPrivateKeys(); // <<< PASTIKAN INI ADA
+    
+    console.log(`🔑 Loaded ${keys.length} wallet(s)`);
 
-    const bot = new WalletBot(key, proxy, globalConfig);
+    for (const [index, key] of keys.entries()) {
+      console.log(`\n💼 Processing wallet ${index + 1}/${keys.length}`);
+      const bot = new WalletBot(key, globalConfig);
+      
+      const ip = await bot.getCurrentIp(); // jika kamu ingin menampilkan IP
+      if (ip) console.log(`🌍 Current IP: ${ip}`);
+      
+      await bot.runBot();
+      await delay(globalConfig.delayMs);
+    }
 
-    // ← Tambahan: fetch dan tampilkan IP
-    const ip = await bot.getCurrentIp();
-    if (ip) console.log(`🌐 IP untuk wallet ${bot.address}: ${ip}`);
-
-    await bot.runBot();
-    await delay(globalConfig.delayMs);
+    console.log('\n🔄 Scheduling next run (24 hours)');
+    setTimeout(() => process.exit(0), 24 * 60 * 60 * 1000);
+    
+  } catch (e) {
+    console.error('💀 Critical error:', e);
+    process.exit(1);
   }
-  // …
 })();
 
 // ======================== 🛡 ERROR HANDLING ========================
