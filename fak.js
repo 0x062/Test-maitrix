@@ -289,6 +289,7 @@ class WalletBot {
       await this.swapToken('virtual');
       await this.swapToken('ath');
       await this.swapToken('vnusd');
+      await this.swapToken('azusd');
       await this.stakeToken('ausd');
       await this.stakeToken('usde');
       await this.stakeToken('lvlusd');
