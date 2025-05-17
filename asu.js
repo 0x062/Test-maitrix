@@ -217,35 +217,33 @@ function delay(ms) {
 }
 
 async function main() {
-  let proxyString = fs.readFileSync('proxies.txt', 'utf-8').trim();
-  if (!proxyString) {
-    console.warn('⚠️ proxies.txt kosong, semua request akan langsung ke RPC tanpa proxy');
-    proxyString = null;
-  }
-  // Kumpulkan private keys dari environment variables
+  // 1. Baca rotating proxy endpoint sekali saja
+  const proxyString = fs.readFileSync('proxies.txt', 'utf-8').trim() || null;
+  if (proxyString) console.log(`▶️ Using rotating proxy: ${proxyString}`);
+  else console.warn('⚠️ proxies.txt kosong — direct RPC tanpa proxy');
+  
+  // 2. Kumpulkan semua PRIVATE_KEY dari env
   const keys = [];
-  if (process.env.PRIVATE_KEY) {
-    keys.push(process.env.PRIVATE_KEY);
-  }
+  if (process.env.PRIVATE_KEY) keys.push(process.env.PRIVATE_KEY);
   let idx = 1;
   while (process.env[`PRIVATE_KEY_${idx}`]) {
     keys.push(process.env[`PRIVATE_KEY_${idx}`]);
     idx++;
   }
 
-  // Jalankan bot untuk setiap key
-  for (const key of keys) {
+  // 3. Jalankan satu per satu dengan proxy yang sama
+  for (const [i, key] of keys.entries()) {
+    console.log(`\n🔷 Starting wallet #${i+1}`);
     const bot = new DexBot(key, proxyString);
     await bot.run();
 
-    // Jika ada lebih dari satu key, beri jeda 30 detik antar bot
     if (keys.length > 1) {
+      console.log('⏳ Waiting 30s before next wallet…');
       await delay(30000);
     }
   }
 }
 
-// Helper delay
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
