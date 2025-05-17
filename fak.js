@@ -283,19 +283,194 @@ class WalletBot {
       console.log(`\n🚀 Starting bot for ${this.address}`);
       await this.claimFaucets();
       await this.checkWalletStatus();
-      
-      // Swap tokens
+// ======================== 🤖 WALLET BOT CLASS ========================
+class WalletBot {
+  constructor(privateKey, proxyUrl, config) {
+    if (!privateKey.match(/^0x[0-9a-fA-F]{64}$/)) {
+      throw new Error("Invalid private key!");
+    }
+
+    this.config = config;
+
+    // Setup HTTP(S) proxy agent if proxyUrl is provided
+    const agent = proxyUrl ? new HttpsProxyAgent(proxyUrl) : undefined;
+
+    // JSON-RPC provider (with proxy)
+    this.provider = new ethers.providers.JsonRpcProvider({
+      url: config.rpc,
+      fetchOptions: agent ? { agent } : undefined
+    });
+
+    // Wallet instance
+    this.wallet = new ethers.Wallet(privateKey, this.provider);
+    this.address = this.wallet.address;
+
+    // Axios instance for faucet requests (with proxy)
+    this.axios = proxyUrl
+      ? axios.create({ httpsAgent: agent })
+      : axios;
+  }
+
+  async claimFaucets() {
+    console.log(`\n=== Claim Faucets for ${this.address} ===`);
+    const endpoints = {
+      ath:     'https://app.x-network.io/maitrix-faucet/faucet',
+      usde:    'https://app.x-network.io/maitrix-usde/faucet',
+      lvlusd:  'https://app.x-network.io/maitrix-lvl/faucet',
+      virtual: 'https://app.x-network.io/maitrix-virtual/faucet',
+      vana:    'https://app.x-network.io/maitrix-vana/faucet'
+    };
+    for (const [tk, url] of Object.entries(endpoints)) {
+      try {
+        const res = await this.axios.post(url, { address: this.address });
+        if (res.status === 200) console.log(`✓ Claimed ${tk}`);
+      } catch (e) {
+        console.error(`✗ Claim ${tk} failed:`, e.response?.data || e.message);
+      }
+      await delay(this.config.delayMs);
+    }
+  }
+
+  async getTokenBalance(tokenAddr) {
+    try {
+      const contract = new ethers.Contract(tokenAddr, erc20Abi, this.wallet);
+      const [balance, decimals, symbol] = await Promise.all([
+        contract.balanceOf(this.address),
+        contract.decimals(),
+        contract.symbol().catch(() => 'UNKNOWN')
+      ]);
+      return {
+        balance,
+        formatted: ethers.utils.formatUnits(balance, decimals),
+        symbol
+      };
+    } catch (e) {
+      debugLog('BALANCE_ERROR', e);
+      return { balance: ethers.constants.Zero, formatted: '0', symbol: 'ERR' };
+    }
+  }
+
+  async getEthBalance() {
+    const balance = await this.provider.getBalance(this.address);
+    return { balance, formatted: ethers.utils.formatEther(balance) };
+  }
+
+  async checkWalletStatus() {
+    console.log(`\n=== Wallet ${this.address.slice(0,8)}... ===`);
+    try {
+      const eth = await this.getEthBalance();
+      console.log(`ETH: ${eth.formatted}`);
+      for (const [name, addr] of Object.entries(this.config.tokens)) {
+        const { formatted, symbol } = await this.getTokenBalance(addr);
+        console.log(`${symbol.padEnd(6)}: ${formatted}`);
+      }
+    } catch (e) {
+      console.error('Status check failed:', e.message);
+    }
+  }
+
+  async swapToken(tokenName) {
+    try {
+      console.log(`\nSwapping ${tokenName}...`);
+      const tokenAddr = this.config.tokens[tokenName];
+      const router    = this.config.routers[tokenName];
+      const methodId  = this.config.methodIds[`${tokenName}Swap`];
+
+      if (!router || !methodId) throw new Error('Invalid router config!');
+
+      const { balance, formatted, symbol } = await this.getTokenBalance(tokenAddr);
+      if (balance.isZero()) {
+        console.log('Skipping: Zero balance');
+        return;
+      }
+
+      // Approve
+      const approveTx = await new ethers.Contract(tokenAddr, erc20Abi, this.wallet)
+        .approve(router, balance, {
+          gasLimit: this.config.gasLimit,
+          maxFeePerGas: this.config.maxFeePerGas,
+          maxPriorityFeePerGas: this.config.maxPriorityFeePerGas
+        });
+      await approveTx.wait();
+      await delay(this.config.delayMs);
+
+      // Execute swap
+      const data = methodId + ethers.utils.defaultAbiCoder
+        .encode(['uint256'], [balance]).slice(2);
+      const tx = await this.wallet.sendTransaction({
+        to: router,
+        data,
+        gasLimit: this.config.gasLimit,
+        maxFeePerGas: this.config.maxFeePerGas,
+        maxPriorityFeePerGas: this.config.maxPriorityFeePerGas
+      });
+      console.log(`TX Hash: ${tx.hash}`);
+      await tx.wait();
+      console.log(`Swapped ${formatted} ${symbol}`);
+
+    } catch (e) {
+      console.error(`Swap failed: ${e.message}`);
+      debugLog('SWAP_ERROR', e);
+    }
+  }
+
+  async stakeToken(tokenName, customAddr = null) {
+    try {
+      console.log(`\nStaking ${tokenName}...`);
+      const tokenAddr    = customAddr || this.config.tokens[tokenName];
+      const stakeContract = this.config.stakeContracts[tokenName];
+
+      if (!stakeContract) throw new Error('Invalid stake contract!');
+
+      const { balance, formatted, symbol } = await this.getTokenBalance(tokenAddr);
+      if (balance.isZero()) {
+        console.log('Skipping: Zero balance');
+        return;
+      }
+
+      // Approve
+      const approveTx = await new ethers.Contract(tokenAddr, erc20Abi, this.wallet)
+        .approve(stakeContract, balance, {
+          gasLimit: this.config.gasLimit,
+          maxFeePerGas: this.config.maxPriorityFeePerGas,
+          maxPriorityFeePerGas: this.config.maxPriorityFeePerGas
+        });
+      await approveTx.wait();
+      await delay(this.config.delayMs);
+
+      // Execute stake
+      const data = this.config.methodIds.stake
+        + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
+      const tx = await this.wallet.sendTransaction({
+        to: stakeContract,
+        data,
+        gasLimit: this.config.gasLimit,
+        maxFeePerGas: this.config.maxFeePerGas,
+        maxPriorityFeePerGas: this.config.maxPriorityFeePerGas
+      });
+      console.log(`TX Hash: ${tx.hash}`);
+      await tx.wait();
+      console.log(`Staked ${formatted} ${symbol}`);
+
+    } catch (e) {
+      console.error(`Stake failed: ${e.message}`);
+      debugLog('STAKE_ERROR', e);
+    }
+  }
+
+  async runBot() {
+    try {
+      console.log(`\n🚀 Starting bot for ${this.address}`);
+      await this.claimFaucets();
+      await this.checkWalletStatus();
       await this.swapToken('virtual');
       await this.swapToken('ath');
       await this.swapToken('vnusd');
-
-      // Stake tokens
       await this.stakeToken('ausd');
       await this.stakeToken('usde');
       await this.stakeToken('lvlusd');
       await this.stakeToken('vusd');
       await this.stakeToken('vnusd', '0x46a6585a0Ad1750d37B4e6810EB59cBDf591Dc30');
-
       await this.checkWalletStatus();
       console.log(`✅ Finished ${this.address}`);
     } catch (e) {
@@ -304,6 +479,7 @@ class WalletBot {
     }
   }
 }
+
 
 // ======================== 🚀 MAIN EXECUTION ========================
 (async () => {
