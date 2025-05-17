@@ -106,6 +106,7 @@ constructor(privateKey, proxyUrl, config) {
   this._key      = privateKey;
   this._proxyUrl = proxyUrl;
   this._config   = config;
+  this.config    = config;
   // default sebelum init
   this.axios     = axios;
   this.agent     = null;
@@ -117,12 +118,12 @@ async init() {
     // cek DNS & setup proxy
     await this._setupProxy(this._proxyUrl);
     this.provider = new ethers.providers.JsonRpcProvider({
-      url: this._config.rpc,
+      url: this.config.rpc,
       fetchOptions: this.agent ? { agent: this.agent } : undefined
     });
   } catch (e) {
     console.warn('⚠️ Proxy setup gagal, lanjut tanpa proxy:', e.message);
-    this.provider = new ethers.providers.JsonRpcProvider(this._config.rpc);
+    this.provider = new ethers.providers.JsonRpcProvider(this.config.rpc);
   }
   this.wallet  = new ethers.Wallet(this._key, this.provider);
   this.address = this.wallet.address;
