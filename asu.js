@@ -2,7 +2,7 @@ const { ethers } = require('ethers');
 const { sendReport } = require('./telegramReporter');
 const axios = require('axios');
 const fs = require('fs');
-const HttpsProxyAgent = require('https-proxy-agent');
+const HttpsProxyAgentModule = require('https-proxy-agent');
 console.log('HttpsProxyAgent import is:', HttpsProxyAgent);
 require('dotenv').config();
 
@@ -67,20 +67,21 @@ class DexBot {
     this.httpsAgent  = this.createProxyAgent();
   }
 
-  // HAPUS fungsi parseProxy entirely
-
-  // GANTI createProxyAgent dengan yang berikut:
   createProxyAgent() {
-    if (!this.proxyString) return null;
-    let proxyUrl = this.proxyString;
-    // Jika belum ada schema, tambahkan http://
-    if (!/^https?:\/\//i.test(proxyUrl)) {
-      proxyUrl = 'http://' + proxyUrl;
-    }
-    console.log('▶️ Using proxy URL:', proxyUrl);
-    // Buat instance agen dari class
-    return new HttpsProxyAgent(proxyUrl);
+  if (!this.proxyString) return null;
+
+  let proxyUrl = this.proxyString;
+  if (!/^https?:\/\//i.test(proxyUrl)) {
+    proxyUrl = 'http://' + proxyUrl;
   }
+  console.log('▶️ Using proxy URL:', proxyUrl);
+
+  // ambil modul utuh, kemudian class-nya dari property HttpsProxyAgent
+  const agentModule = require('https-proxy-agent');
+  const AgentClass = agentModule.HttpsProxyAgent;
+  // sekarang baru 'new' AgentClass
+  return new AgentClass(proxyUrl);
+}
 
   async verifyProxy() {
     if (!this.httpsAgent) return false;
