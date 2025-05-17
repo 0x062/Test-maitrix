@@ -297,39 +297,39 @@ class WalletBot {
       debugLog('BOT_ERROR', e);
     }
   }
+  
+  async getCurrentIp() {
+    try {
+      const res = await this.axios.get('https://api.ipify.org?format=json', { timeout: 5000 });
+      return res.data.ip;
+    } catch (e) {
+      console.warn(`⚠️ Gagal fetch IP untuk ${this.address}:`, e.message);
+      return null;
+    }
+  }
 }
 
 // ======================== 🚀 MAIN EXECUTION ========================
 (async () => {
-  try {
-    console.log('🔌 Initializing bot...');
-    const keys    = getPrivateKeys();
-    const proxies = getProxyUrls();
+  // …
+  for (let i = 0; i < keys.length; i++) {
+    const key   = keys[i];
+    const proxy = proxies.length ? proxies[i % proxies.length] : null;
     console.log(
-      `🔑 Loaded ${keys.length} wallet(s)` +
-      (proxies.length ? ` and ${proxies.length} proxy(ies)` : '')
+      `\n💼 Processing wallet ${i + 1}/${keys.length}` +
+      (proxy ? ` using proxy ${proxy}` : '')
     );
-    if (!proxies.length) console.warn('⚠️ Tidak ada proxy, lanjut tanpa proxy');
 
-    for (let i = 0; i < keys.length; i++) {
-      const key   = keys[i];
-      // ⬇️ Pilih proxy secara rotating, atau null jika tidak ada
-      const proxy = proxies.length ? proxies[i % proxies.length] : null;
-      console.log(
-        `\n💼 Processing wallet ${i + 1}/${keys.length}` +
-        (proxy ? ` using proxy ${proxy}` : '')
-      );
-      const bot = new WalletBot(key, proxy, globalConfig);
-      await bot.runBot();
-      await delay(globalConfig.delayMs);
-    }
-    
-    console.log('\n🔄 Scheduling next run (24 hours)');
-    setTimeout(() => process.exit(0), 24 * 60 * 60 * 1000);
-  } catch (e) {
-    console.error('💀 Critical error:', e);
-    process.exit(1);
+    const bot = new WalletBot(key, proxy, globalConfig);
+
+    // ← Tambahan: fetch dan tampilkan IP
+    const ip = await bot.getCurrentIp();
+    if (ip) console.log(`🌐 IP untuk wallet ${bot.address}: ${ip}`);
+
+    await bot.runBot();
+    await delay(globalConfig.delayMs);
   }
+  // …
 })();
 
 // ======================== 🛡 ERROR HANDLING ========================
