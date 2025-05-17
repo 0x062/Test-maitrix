@@ -297,6 +297,7 @@ class WalletBot {
       debugLog('BOT_ERROR', e);
     }
   }
+}
   
   async getCurrentIp() {
     try {
