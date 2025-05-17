@@ -4,6 +4,7 @@ const { sendReport } = require('./telegramReporter');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 require('dotenv').config();
 
 // ======================== 🛠 HELPER FUNCTIONS ========================
@@ -38,6 +39,22 @@ function getPrivateKeys() {
 
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function getProxyUrls() {
+  const filePath = path.join(__dirname, 'proxies.txt');
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const proxies = content
+      .split(/\r?\n/)
+      .map(l => l.trim())
+      .filter(l => l && !l.startsWith('#'));
+    if (!proxies.length) console.warn('⚠️ proxies.txt kosong, lanjut tanpa proxy');
+    return proxies;
+  } catch (e) {
+    console.warn('⚠️ Gagal baca proxies.txt, lanjut tanpa proxy:', e.message);
+    return [];
+  }
 }
 
 // ======================== ⚙️ CONFIGURATION ========================
@@ -86,20 +103,27 @@ const globalConfig = {
 
 // ======================== 🤖 WALLET BOT CLASS ========================
 class WalletBot {
-  constructor(privateKey, config) {
+  // ⚠️ Parameter kedua sekarang proxyUrl, ketiga config
+  constructor(privateKey, proxyUrl, config) {
     if (!privateKey.match(/^0x[0-9a-fA-F]{64}$/)) {
       throw new Error("Invalid private key!");
     }
-    
+
     this.config = config;
-    this.provider = new ethers.providers.JsonRpcProvider(config.rpc);
-    this.wallet = new ethers.Wallet(privateKey, this.provider);
+    // ═ Setup proxy agent jika ada
+    const agent = proxyUrl ? new HttpsProxyAgent(proxyUrl) : undefined;
+    this.provider = new ethers.providers.JsonRpcProvider({
+      url: config.rpc,
+      fetchOptions: agent ? { agent } : undefined
+    });
+    this.wallet  = new ethers.Wallet(privateKey, this.provider);
     this.address = this.wallet.address;
-    
-    //this.provider.on('debug', (data) => {
-    // debugLog('[RPC]', data);
-    //});
+    // Axios juga melalui proxy jika ada
+    this.axios   = proxyUrl
+      ? axios.create({ httpsAgent: agent })
+      : axios;
   }
+}
 
   async claimFaucets() {
     console.log(`\n=== Claim Faucets for ${this.address} ===`);
@@ -285,16 +309,27 @@ class WalletBot {
 (async () => {
   try {
     console.log('🔌 Initializing bot...');
-    const keys = getPrivateKeys();
-    console.log(`🔑 Loaded ${keys.length} wallet(s)`);
+    const keys    = getPrivateKeys();
+    const proxies = getProxyUrls();
+    console.log(
+      `🔑 Loaded ${keys.length} wallet(s)` +
+      (proxies.length ? ` and ${proxies.length} proxy(ies)` : '')
+    );
+    if (!proxies.length) console.warn('⚠️ Tidak ada proxy, lanjut tanpa proxy');
 
-    for (const [index, key] of keys.entries()) {
-      console.log(`\n💼 Processing wallet ${index + 1}/${keys.length}`);
-      const bot = new WalletBot(key, globalConfig);
+    for (let i = 0; i < keys.length; i++) {
+      const key   = keys[i];
+      // ⬇️ Pilih proxy secara rotating, atau null jika tidak ada
+      const proxy = proxies.length ? proxies[i % proxies.length] : null;
+      console.log(
+        `\n💼 Processing wallet ${i + 1}/${keys.length}` +
+        (proxy ? ` using proxy ${proxy}` : '')
+      );
+      const bot = new WalletBot(key, proxy, globalConfig);
       await bot.runBot();
       await delay(globalConfig.delayMs);
     }
-
+    
     console.log('\n🔄 Scheduling next run (24 hours)');
     setTimeout(() => process.exit(0), 24 * 60 * 60 * 1000);
   } catch (e) {
