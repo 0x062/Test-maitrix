@@ -55,56 +55,35 @@ const CONFIG = {
   }
 };
 
+
 class DexBot {
-  constructor(privateKey, proxy) {
-    this.privateKey = privateKey;
-    this.provider = new ethers.providers.JsonRpcProvider(CONFIG.RPC);
-    this.wallet = new ethers.Wallet(privateKey, this.provider);
-    this.proxy = this.parseProxy(proxy);
-    this.httpsAgent = this.createProxyAgent();
+  constructor(privateKey, proxyString) {
+    this.privateKey  = privateKey;
+    this.provider    = new ethers.providers.JsonRpcProvider(CONFIG.RPC);
+    this.wallet      = new ethers.Wallet(privateKey, this.provider);
+    // Simpan string proxy mentah dari file tanpa parsing
+    this.proxyString = proxyString?.trim() || null;
+    // Buat agent langsung dari URL
+    this.httpsAgent  = this.createProxyAgent();
   }
 
-  parseProxy(proxyString) {
-  if (!proxyString) return null;
+  // HAPUS fungsi parseProxy entirely
 
-  let auth = null;
-  let host, port;
-
-  if (proxyString.includes('@')) {
-    // format username:password@host:port
-    const [authPart, hostPart] = proxyString.split('@');
-    const [username, password] = authPart.split(':');
-    [host, port] = hostPart.split(':');
-    auth = { username: username.trim(), password: password.trim() };
-  } else {
-    // format host:port
-    [host, port] = proxyString.split(':');
-  }
-
-  return {
-    protocol: 'http',
-    host: host.trim(),
-    port: parseInt(port.trim(), 10),
-    auth
-  };
-}
-
+  // GANTI createProxyAgent dengan yang berikut:
   createProxyAgent() {
-  if (!this.proxy) return null;
-
-  const { protocol, host, port, auth } = this.proxy;
-  const proxyUrl = auth
-    ? `${protocol}://${auth.username}:${auth.password}@${host}:${port}`
-    : `${protocol}://${host}:${port}`;
-
-  // Ambil class HttpsProxyAgent
-  const { HttpsProxyAgent } = require('https-proxy-agent');
-  return new HttpsProxyAgent(proxyUrl);
-}
+    if (!this.proxyString) return null;
+    let proxyUrl = this.proxyString;
+    // Jika belum ada schema, tambahkan http://
+    if (!/^https?:\/\//i.test(proxyUrl)) {
+      proxyUrl = 'http://' + proxyUrl;
+    }
+    console.log('▶️ Using proxy URL:', proxyUrl);
+    // Buat instance agen dari class
+    return new HttpsProxyAgent(proxyUrl);
+  }
 
   async verifyProxy() {
-    if (!this.proxy) return false;
-    
+    if (!this.httpsAgent) return false;
     try {
       const response = await axios.get('https://api.ipify.org?format=json', {
         httpsAgent: this.httpsAgent,
