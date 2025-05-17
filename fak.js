@@ -264,6 +264,7 @@ class WalletBot {
       console.log(`TX Hash: ${tx.hash}`);
       await tx.wait();
       console.log(`Staked ${formatted} ${symbol}`);
+      await sendReport(`✅ Stake *${tokenName}* berhasil\nHash: \`${tx.hash}\`\nJumlah: ${formatted} ${symbol}`);
 
     } catch (e) {
       console.error(`Stake failed: ${e.message}`);
