@@ -70,18 +70,18 @@ class DexBot {
   createProxyAgent() {
   if (!this.proxyString) return null;
 
+  // Pastikan URL proxy punya skema http://
   let proxyUrl = this.proxyString;
   if (!/^https?:\/\//i.test(proxyUrl)) {
     proxyUrl = 'http://' + proxyUrl;
   }
   console.log('▶️ Using proxy URL:', proxyUrl);
 
-  // ambil modul utuh, kemudian class-nya dari property HttpsProxyAgent
-  const agentModule = require('https-proxy-agent');
-  const AgentClass = agentModule.HttpsProxyAgent;
-  // sekarang baru 'new' AgentClass
+  // Dari modul utuh, ambil class HttpsProxyAgent
+  const AgentClass = HttpsProxyAgentModule.HttpsProxyAgent;
   return new AgentClass(proxyUrl);
 }
+
 
   async verifyProxy() {
     if (!this.httpsAgent) return false;
