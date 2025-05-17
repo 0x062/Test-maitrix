@@ -3,7 +3,6 @@ const { sendReport } = require('./telegramReporter');
 const axios = require('axios');
 const fs = require('fs');
 const HttpsProxyAgentModule = require('https-proxy-agent');
-console.log('HttpsProxyAgent import is:', HttpsProxyAgent);
 require('dotenv').config();
 
 const CONFIG = {
@@ -56,21 +55,17 @@ const CONFIG = {
 };
 
 
-class DexBot {
-  constructor(privateKey, proxyString) {
-    this.privateKey  = privateKey;
-    this.provider    = new ethers.providers.JsonRpcProvider(CONFIG.RPC);
-    this.wallet      = new ethers.Wallet(privateKey, this.provider);
-    // Simpan string proxy mentah dari file tanpa parsing
-    this.proxyString = proxyString?.trim() || null;
-    // Buat agent langsung dari URL
-    this.httpsAgent  = this.createProxyAgent();
-  }
-
+class DexBot {constructor(privateKey, proxyString) {
+  this.privateKey  = privateKey;
+  this.provider    = new ethers.providers.JsonRpcProvider(CONFIG.RPC);
+  this.wallet      = new ethers.Wallet(privateKey, this.provider);
+  this.proxyString = proxyString?.trim() || null;
+  this.httpsAgent  = this.createProxyAgent();
+}
+              
   createProxyAgent() {
   if (!this.proxyString) return null;
 
-  // Pastikan URL proxy punya skema http://
   let proxyUrl = this.proxyString;
   if (!/^https?:\/\//i.test(proxyUrl)) {
     proxyUrl = 'http://' + proxyUrl;
@@ -81,7 +76,6 @@ class DexBot {
   const AgentClass = HttpsProxyAgentModule.HttpsProxyAgent;
   return new AgentClass(proxyUrl);
 }
-
 
   async verifyProxy() {
     if (!this.httpsAgent) return false;
