@@ -3,6 +3,7 @@ const { sendReport } = require('./telegramReporter');
 const axios = require('axios');
 const fs = require('fs');
 const HttpsProxyAgent = require('https-proxy-agent');
+console.log('HttpsProxyAgent import is:', HttpsProxyAgent);
 require('dotenv').config();
 
 const CONFIG = {
@@ -84,14 +85,25 @@ class DexBot {
   }
 
   createProxyAgent() {
-    if (!this.proxy) return null;
-    
-    const proxyUrl = this.proxy.auth 
-      ? `${this.proxy.protocol}://${this.proxy.auth.username}:${this.proxy.auth.password}@${this.proxy.host}:${this.proxy.port}`
-      : `${this.proxy.protocol}://${this.proxy.host}:${this.proxy.port}`;
+  if (!this.proxy) return null;
+  const { auth, protocol, host, port } = this.proxy;
+  const proxyUrl = auth
+    ? `${protocol}://${auth.username}:${auth.password}@${host}:${port}`
+    : `${protocol}://${host}:${port}`;
 
-    return HttpsProxyAgent(proxyUrl);
+  // require ulang agar sesuai konvensi CJS
+  const lib = require('https-proxy-agent');
+  // cari mana yang merupakan constructor
+  const AgentCtor = lib.HttpsProxyAgent || lib.default || lib;
+  
+  // kalau ternyata AgentCtor bukan class tapi factory function,
+  // panggil tanpa new; otherwise new.
+  try {
+    return new AgentCtor(proxyUrl);
+  } catch {
+    return AgentCtor(proxyUrl);
   }
+}
 
   async verifyProxy() {
     if (!this.proxy) return false;
