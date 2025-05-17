@@ -97,37 +97,43 @@ const globalConfig = {
 // ======================== 🤖 WALLET BOT CLASS ========================
 
 class WalletBot {
-
-constructor(privateKey, proxyUrl, config) {
-  if (!privateKey.match(/^0x[0-9a-fA-F]{64}$/)) {
-    throw new Error("Invalid private key!");
+  constructor(privateKey, proxyUrl, config) {
+    // simpan state
+    this._key      = privateKey;
+    this._proxyUrl = proxyUrl;
+    this.config    = config;
+    this.axios     = axios;
+    this.agent     = null;
   }
-  // simpan untuk init nanti
-  this._key      = privateKey;
-  this._proxyUrl = proxyUrl;
-  this._config   = config;
-  this.config    = config;
-  // default sebelum init
-  this.axios     = axios;
-  this.agent     = null;
-}
 
-  // 3. Tambahkan method init() di dalam class, tepat setelah constructor:
-async init() {
-  try {
-    // cek DNS & setup proxy
-    await this._setupProxy(this._proxyUrl);
-    this.provider = new ethers.providers.JsonRpcProvider({
-      url: this.config.rpc,
-      fetchOptions: this.agent ? { agent: this.agent } : undefined
-    });
-  } catch (e) {
-    console.warn('⚠️ Proxy setup gagal, lanjut tanpa proxy:', e.message);
-    this.provider = new ethers.providers.JsonRpcProvider(this.config.rpc);
+  // ▶️ Jangan tambahkan koma di akhir method ini
+  async init() {
+    try {
+      await this._setupProxy(this._proxyUrl);
+      this.provider = new ethers.providers.JsonRpcProvider({
+        url: this.config.rpc,
+        fetchOptions: this.agent ? { agent: this.agent } : undefined
+      });
+    } catch (e) {
+      console.warn('⚠️ Proxy setup gagal, lanjut tanpa proxy:', e.message);
+      this.provider = new ethers.providers.JsonRpcProvider(this.config.rpc);
+    }
+    this.wallet  = new ethers.Wallet(this._key, this.provider);
+    this.address = this.wallet.address;
+  }   // ← pastikan di sini **tidak** ada `,`
+
+  // ▶️ Method ini harus di dalam class, sejajar dengan init()
+  async _setupProxy(proxyUrl) {
+    if (!proxyUrl) {
+      console.log('🌐 No proxy configured');
+      return;
+    }
+    const { hostname, port } = new URL(proxyUrl);
+    await dns.lookup(hostname);
+    this.agent = new HttpsProxyAgent(proxyUrl);
+    this.axios = axios.create({ httpsAgent: this.agent, timeout: 10000 });
+    console.log(`🛡️ Using proxy: ${hostname}:${port}`);
   }
-  this.wallet  = new ethers.Wallet(this._key, this.provider);
-  this.address = this.wallet.address;
-}
 
   async claimFaucets() {
     console.log(`\n=== Claim Faucets for ${this.address} ===`);
