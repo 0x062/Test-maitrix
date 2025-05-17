@@ -217,10 +217,11 @@ function delay(ms) {
 }
 
 async function main() {
-  // Baca proxy string dari file
-  const fs = require('fs');
-  const proxyString = fs.readFileSync('proxies.txt', 'utf-8').trim();
-
+  let proxyString = fs.readFileSync('proxies.txt', 'utf-8').trim();
+  if (!proxyString) {
+    console.warn('⚠️ proxies.txt kosong, semua request akan langsung ke RPC tanpa proxy');
+    proxyString = null;
+  }
   // Kumpulkan private keys dari environment variables
   const keys = [];
   if (process.env.PRIVATE_KEY) {
