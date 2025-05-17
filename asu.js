@@ -2,8 +2,8 @@ const { ethers } = require('ethers');
 const { sendReport } = require('./telegramReporter');
 const axios = require('axios');
 const fs = require('fs');
-const HttpsProxyAgentModule = require('https-proxy-agent');
 require('dotenv').config();
+const HttpsProxyAgentModule = require('https-proxy-agent');
 
 const CONFIG = {
   RPC: 'https://arbitrum-sepolia.gateway.tenderly.co',
@@ -66,13 +66,14 @@ class DexBot {constructor(privateKey, proxyString) {
   createProxyAgent() {
   if (!this.proxyString) return null;
 
+  // Tambahkan schema jika perlu
   let proxyUrl = this.proxyString;
   if (!/^https?:\/\//i.test(proxyUrl)) {
     proxyUrl = 'http://' + proxyUrl;
   }
   console.log('▶️ Using proxy URL:', proxyUrl);
 
-  // Dari modul utuh, ambil class HttpsProxyAgent
+  // Ambil class HttpsProxyAgent dari modul yang benar
   const AgentClass = HttpsProxyAgentModule.HttpsProxyAgent;
   return new AgentClass(proxyUrl);
 }
@@ -216,20 +217,37 @@ function delay(ms) {
 }
 
 async function main() {
-  const proxy = fs.readFileSync('proxies.txt', 'utf-8').trim();
-  const keys = process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [];
-  
+  // Baca proxy string dari file
+  const fs = require('fs');
+  const proxyString = fs.readFileSync('proxies.txt', 'utf-8').trim();
+
+  // Kumpulkan private keys dari environment variables
+  const keys = [];
+  if (process.env.PRIVATE_KEY) {
+    keys.push(process.env.PRIVATE_KEY);
+  }
   let idx = 1;
   while (process.env[`PRIVATE_KEY_${idx}`]) {
     keys.push(process.env[`PRIVATE_KEY_${idx}`]);
     idx++;
   }
 
+  // Jalankan bot untuk setiap key
   for (const key of keys) {
-    const bot = new DexBot(key, proxy);
+    const bot = new DexBot(key, proxyString);
     await bot.run();
-    if (keys.length > 1) await delay(30000);
+
+    // Jika ada lebih dari satu key, beri jeda 30 detik antar bot
+    if (keys.length > 1) {
+      await delay(30000);
+    }
   }
 }
 
+// Helper delay
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Eksekusi main dan tangani error
 main().catch(console.error);
