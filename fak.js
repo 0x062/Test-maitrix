@@ -1,4 +1,3 @@
-// multiAccountBot.js (FIXED)
 const { ethers } = require('ethers');
 const { sendReport } = require('./telegramReporter');
 const axios = require('axios');
@@ -49,9 +48,7 @@ const erc20Abi = [
   'function approve(address, uint) returns (bool)'
 ];
 
-// after: tambahkan tepat di atas `const globalConfig`
 const PROXIES = [
-  // format: 'http://user:pass@host:port'
   'http://user1:pass1@proxy1.example.com:8080',
   'http://user2:pass2@proxy2.example.com:8080'
 ];
@@ -100,31 +97,28 @@ class WalletBot {
     }
 
     this.config = config;
-
-    // Setup proxy agent
+    
     let agent;
     if (proxyUrl) {
       try {
-
         agent = new HttpsProxyAgent(proxyUrl);
-        console.log(`🛡️ Using proxy: ${proxyUrl.split('@')[1]}`);
-        console.log(`🛡️ Using proxy: ${proxyUrl.split('@')[1]}`);
+        const shortProxy = proxyUrl.includes('@') ? proxyUrl.split('@')[1] : proxyUrl;
+        console.log(`🛡️ Using proxy: ${shortProxy}`);
       } catch (e) {
         console.warn(`⚠️ Proxy initialization failed: ${e.message}`);
       }
+    } else {
+      console.log('🌐 No proxy used');
     }
-
-    // Initialize provider with proxy
+    
     this.provider = new ethers.providers.JsonRpcProvider({
       url: config.rpc,
       fetchOptions: agent ? { agent } : undefined
     });
-
-    // Initialize wallet
+    
     this.wallet = new ethers.Wallet(privateKey, this.provider);
     this.address = this.wallet.address;
 
-    // Configure axios instance
     this.axios = agent 
       ? axios.create({
           httpsAgent: agent,
@@ -207,7 +201,6 @@ class WalletBot {
         return;
       }
 
-      // Approve
       const approveTx = await new ethers.Contract(tokenAddr, erc20Abi, this.wallet)
         .approve(router, balance, {
           gasLimit: this.config.gasLimit,
@@ -217,7 +210,6 @@ class WalletBot {
       await approveTx.wait();
       await delay(this.config.delayMs);
 
-      // Execute swap
       const data = methodId + ethers.utils.defaultAbiCoder
         .encode(['uint256'], [balance]).slice(2);
       const tx = await this.wallet.sendTransaction({
@@ -251,7 +243,6 @@ class WalletBot {
         return;
       }
 
-      // Approve
       const approveTx = await new ethers.Contract(tokenAddr, erc20Abi, this.wallet)
         .approve(stakeContract, balance, {
           gasLimit: this.config.gasLimit,
@@ -261,7 +252,6 @@ class WalletBot {
       await approveTx.wait();
       await delay(this.config.delayMs);
 
-      // Execute stake
       const data = this.config.methodIds.stake
         + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
       const tx = await this.wallet.sendTransaction({
