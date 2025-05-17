@@ -90,7 +90,7 @@ class DexBot {
       ? `${this.proxy.protocol}://${this.proxy.auth.username}:${this.proxy.auth.password}@${this.proxy.host}:${this.proxy.port}`
       : `${this.proxy.protocol}://${this.proxy.host}:${this.proxy.port}`;
 
-    return new HttpsProxyAgent(proxyUrl);
+    return HttpsProxyAgent(proxyUrl);
   }
 
   async verifyProxy() {
