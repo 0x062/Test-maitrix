@@ -2,6 +2,7 @@ const { ethers } = require('ethers');
 const { sendReport } = require('./telegramReporter');
 const axios = require('axios');
 const fs = require('fs');
+const HttpsProxyAgent = require('https-proxy-agent');
 require('dotenv').config();
 
 const CONFIG = {
@@ -58,31 +59,48 @@ class DexBot {
     this.privateKey = privateKey;
     this.provider = new ethers.providers.JsonRpcProvider(CONFIG.RPC);
     this.wallet = new ethers.Wallet(privateKey, this.provider);
-    
-    // Handle single proxy
     this.proxy = this.parseProxy(proxy);
+    this.httpsAgent = this.createProxyAgent();
   }
 
   parseProxy(proxyString) {
     if (!proxyString) return null;
-    const parts = proxyString.split('@');
-    let [host, port] = parts[parts.length-1].split(':');
+    try {
+      const [auth, hostPart] = proxyString.split('@').reverse();
+      const [host, port] = auth.split(':');
+      
+      return {
+        protocol: 'http',
+        host: host.trim(),
+        port: parseInt(port.trim()),
+        auth: hostPart ? {
+          username: hostPart.split(':')[0],
+          password: hostPart.split(':')[1]
+        } : null
+      };
+    } catch (e) {
+      throw new Error('Invalid proxy format. Use: username:password@host:port or host:port');
+    }
+  }
+
+  createProxyAgent() {
+    if (!this.proxy) return null;
     
-    return {
-      host: host.trim(),
-      port: parseInt(port.trim()),
-      auth: parts.length > 1 ? {
-        username: parts[0].split(':')[0],
-        password: parts[0].split(':')[1]
-      } : null
-    };
+    const proxyUrl = this.proxy.auth 
+      ? `${this.proxy.protocol}://${this.proxy.auth.username}:${this.proxy.auth.password}@${this.proxy.host}:${this.proxy.port}`
+      : `${this.proxy.protocol}://${this.proxy.host}:${this.proxy.port}`;
+
+    return new HttpsProxyAgent(proxyUrl);
   }
 
   async verifyProxy() {
+    if (!this.proxy) return false;
+    
     try {
       const response = await axios.get('https://api.ipify.org?format=json', {
-        proxy: this.proxy,
-        timeout: 10000
+        httpsAgent: this.httpsAgent,
+        timeout: 10000,
+        rejectUnauthorized: false
       });
       console.log(`✅ Proxy Active | IP: ${response.data.ip}`);
       return true;
@@ -93,22 +111,20 @@ class DexBot {
   }
 
   async httpRequest(url, data) {
-    if (!this.proxy) throw new Error('No proxy configured');
+    if (!this.httpsAgent) throw new Error('No proxy configured');
     
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        const config = {
-          proxy: this.proxy,
-          timeout: 15000
-        };
-        
-        console.log(`🔧 Attempt ${attempt} using proxy: ${this.proxy.host}:${this.proxy.port}`);
-        return await axios.post(url, data, config);
-      } catch (e) {
-        console.log(`⚠️ Proxy error (attempt ${attempt}): ${e.message}`);
-        if (attempt === 3) throw e;
-        await delay(5000);
-      }
+    try {
+      return await axios.post(url, data, {
+        httpsAgent: this.httpsAgent,
+        timeout: 15000,
+        rejectUnauthorized: false,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+      });
+    } catch (e) {
+      console.log(`⚠️ Proxy error: ${e.message}`);
+      throw e;
     }
   }
 
