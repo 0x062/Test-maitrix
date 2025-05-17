@@ -316,20 +316,30 @@ class WalletBot {
     }
   }
 }
-.
+
 (async () => {
+  console.log('🔌 Initializing bot...');
+
   const keys = getPrivateKeys();
-  const proxies = getProxyUrls();            // ← masih baca dari file
+  const proxies = PROXIES;
+  console.log(`🛡️ Using ${proxies.length} hardcoded proxy(s)`);
+  console.log(`🔑 Loaded ${keys.length} wallet(s)`);
 
-  console.log(`🛡️ Available proxies: ${proxies.length}`);
-
-  for (const [i, key] of keys.entries()) {
-    const proxyUrl = proxies[i % proxies.length] || null;
+  for (const [index, key] of keys.entries()) {
+    console.log(`\n💼 Processing wallet ${index + 1}/${keys.length}`);
+    const proxyUrl = proxies[index % proxies.length] || null;
     const bot = new WalletBot(key, proxyUrl, globalConfig);
-    await bot.runBot();
-  }
-})();
 
+    const ip = await bot.getCurrentIp();
+    console.log(`🌍 Current IP: ${ip || 'No proxy detected'}`);
+
+    await bot.runBot();
+    await delay(globalConfig.delayMs);
+  }
+
+  console.log('\n🔄 Scheduling next run (24 hours)');
+  setTimeout(() => process.exit(0), 24 * 60 * 60 * 1000);
+})();
 
 // ======================== 🛡 ERROR HANDLING ========================
 process.on('unhandledRejection', (reason) => {
