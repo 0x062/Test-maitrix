@@ -1,4 +1,4 @@
-// multiAccountBot.js
+// multiAccountBot.js (FIXED)
 const { ethers } = require('ethers');
 const { sendReport } = require('./telegramReporter');
 const axios = require('axios');
@@ -102,7 +102,6 @@ const globalConfig = {
 };
 
 // ======================== 🤖 WALLET BOT CLASS ========================
-// ======================== 🤖 WALLET BOT CLASS ========================
 class WalletBot {
   constructor(privateKey, proxyUrl, config) {
     if (!privateKey.match(/^0x[0-9a-fA-F]{64}$/)) {
@@ -111,22 +110,39 @@ class WalletBot {
 
     this.config = config;
 
-    // Setup HTTP(S) proxy agent if proxyUrl is provided
-    const agent = proxyUrl ? new HttpsProxyAgent(proxyUrl) : undefined;
+    // Setup proxy agent
+    let agent;
+    if (proxyUrl) {
+      try {
+        // Handle special characters in credentials
+        const encodedProxy = proxyUrl.replace(
+          /(http:\/\/)(.*)(@.*)/,
+          (_, prefix, creds, suffix) => 
+            prefix + encodeURIComponent(creds) + suffix
+        );
+        agent = new HttpsProxyAgent(encodedProxy);
+        console.log(`🛡️ Using proxy: ${proxyUrl.split('@')[1]}`);
+      } catch (e) {
+        console.warn(`⚠️ Proxy initialization failed: ${e.message}`);
+      }
+    }
 
-    // JSON-RPC provider (with proxy)
+    // Initialize provider with proxy
     this.provider = new ethers.providers.JsonRpcProvider({
       url: config.rpc,
       fetchOptions: agent ? { agent } : undefined
     });
 
-    // Wallet instance
+    // Initialize wallet
     this.wallet = new ethers.Wallet(privateKey, this.provider);
     this.address = this.wallet.address;
 
-    // Axios instance for faucet requests (with proxy)
-    this.axios = proxyUrl
-      ? axios.create({ httpsAgent: agent })
+    // Configure axios instance
+    this.axios = agent 
+      ? axios.create({
+          httpsAgent: agent,
+          timeout: 10000
+        })
       : axios;
   }
 
@@ -139,6 +155,7 @@ class WalletBot {
       virtual: 'https://app.x-network.io/maitrix-virtual/faucet',
       vana:    'https://app.x-network.io/maitrix-vana/faucet'
     };
+    
     for (const [tk, url] of Object.entries(endpoints)) {
       try {
         const res = await this.axios.post(url, { address: this.address });
@@ -236,7 +253,7 @@ class WalletBot {
   async stakeToken(tokenName, customAddr = null) {
     try {
       console.log(`\nStaking ${tokenName}...`);
-      const tokenAddr    = customAddr || this.config.tokens[tokenName];
+      const tokenAddr = customAddr || this.config.tokens[tokenName];
       const stakeContract = this.config.stakeContracts[tokenName];
 
       if (!stakeContract) throw new Error('Invalid stake contract!');
@@ -251,7 +268,7 @@ class WalletBot {
       const approveTx = await new ethers.Contract(tokenAddr, erc20Abi, this.wallet)
         .approve(stakeContract, balance, {
           gasLimit: this.config.gasLimit,
-          maxFeePerGas: this.config.maxPriorityFeePerGas,
+          maxFeePerGas: this.config.maxFeePerGas,
           maxPriorityFeePerGas: this.config.maxPriorityFeePerGas
         });
       await approveTx.wait();
@@ -298,33 +315,35 @@ class WalletBot {
     }
   }
 
-    async getCurrentIp() {
+  async getCurrentIp() {
     try {
-      const res = await axios.get('https://api.ipify.org?format=json', { timeout: 5000 });
+      const res = await this.axios.get('https://api.ipify.org?format=json', { timeout: 5000 });
       return res.data.ip;
     } catch (e) {
-      console.warn(`⚠️ Gagal fetch IP untuk ${this.address}:`, e.message);
+      console.warn(`⚠️ Failed to fetch IP for ${this.address}:`, e.message);
       return null;
     }
   }
 }
 
 // ======================== 🚀 MAIN EXECUTION ========================
-// ======================== 🚀 MAIN EXECUTION ========================
 (async () => {
   try {
     console.log('🔌 Initializing bot...');
     
-    const keys = getPrivateKeys(); // <<< PASTIKAN INI ADA
+    const keys = getPrivateKeys();
+    const proxies = getProxyUrls();
     
     console.log(`🔑 Loaded ${keys.length} wallet(s)`);
+    console.log(`🛡️ Available proxies: ${proxies.length}`);
 
     for (const [index, key] of keys.entries()) {
       console.log(`\n💼 Processing wallet ${index + 1}/${keys.length}`);
-      const bot = new WalletBot(key, globalConfig);
+      const proxyUrl = proxies[index % proxies.length] || null;
+      const bot = new WalletBot(key, proxyUrl, globalConfig);
       
-      const ip = await bot.getCurrentIp(); // jika kamu ingin menampilkan IP
-      if (ip) console.log(`🌍 Current IP: ${ip}`);
+      const ip = await bot.getCurrentIp();
+      console.log(`🌍 Current IP: ${ip || 'No proxy detected'}`);
       
       await bot.runBot();
       await delay(globalConfig.delayMs);
