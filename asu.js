@@ -65,44 +65,41 @@ class DexBot {
   }
 
   parseProxy(proxyString) {
-    if (!proxyString) return null;
-    try {
-      const [auth, hostPart] = proxyString.split('@').reverse();
-      const [host, port] = auth.split(':');
-      
-      return {
-        protocol: 'http',
-        host: host.trim(),
-        port: parseInt(port.trim()),
-        auth: hostPart ? {
-          username: hostPart.split(':')[0],
-          password: hostPart.split(':')[1]
-        } : null
-      };
-    } catch (e) {
-      throw new Error('Invalid proxy format. Use: username:password@host:port or host:port');
-    }
+  if (!proxyString) return null;
+
+  let auth = null;
+  let host, port;
+
+  if (proxyString.includes('@')) {
+    // format username:password@host:port
+    const [authPart, hostPart] = proxyString.split('@');
+    const [username, password] = authPart.split(':');
+    [host, port] = hostPart.split(':');
+    auth = { username: username.trim(), password: password.trim() };
+  } else {
+    // format host:port
+    [host, port] = proxyString.split(':');
   }
+
+  return {
+    protocol: 'http',
+    host: host.trim(),
+    port: parseInt(port.trim(), 10),
+    auth
+  };
+}
 
   createProxyAgent() {
   if (!this.proxy) return null;
-  const { auth, protocol, host, port } = this.proxy;
+
+  const { protocol, host, port, auth } = this.proxy;
   const proxyUrl = auth
     ? `${protocol}://${auth.username}:${auth.password}@${host}:${port}`
     : `${protocol}://${host}:${port}`;
 
-  // require ulang agar sesuai konvensi CJS
-  const lib = require('https-proxy-agent');
-  // cari mana yang merupakan constructor
-  const AgentCtor = lib.HttpsProxyAgent || lib.default || lib;
-  
-  // kalau ternyata AgentCtor bukan class tapi factory function,
-  // panggil tanpa new; otherwise new.
-  try {
-    return new AgentCtor(proxyUrl);
-  } catch {
-    return AgentCtor(proxyUrl);
-  }
+  // Ambil class HttpsProxyAgent
+  const { HttpsProxyAgent } = require('https-proxy-agent');
+  return new HttpsProxyAgent(proxyUrl);
 }
 
   async verifyProxy() {
