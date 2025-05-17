@@ -105,13 +105,9 @@ class WalletBot {
     let agent;
     if (proxyUrl) {
       try {
-        // Handle special characters in credentials
-        const encodedProxy = proxyUrl.replace(
-          /(http:\/\/)(.*)(@.*)/,
-          (_, prefix, creds, suffix) => 
-            prefix + encodeURIComponent(creds) + suffix
-        );
-        agent = new HttpsProxyAgent(encodedProxy);
+
+        agent = new HttpsProxyAgent(proxyUrl);
+        console.log(`🛡️ Using proxy: ${proxyUrl.split('@')[1]}`);
         console.log(`🛡️ Using proxy: ${proxyUrl.split('@')[1]}`);
       } catch (e) {
         console.warn(`⚠️ Proxy initialization failed: ${e.message}`);
