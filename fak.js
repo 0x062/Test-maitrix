@@ -41,28 +41,19 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function getProxyUrls() {
-  const filePath = path.join(__dirname, 'proxies.txt');
-  try {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const proxies = content
-      .split(/\r?\n/)
-      .map(l => l.trim())
-      .filter(l => l && !l.startsWith('#'));
-    if (!proxies.length) console.warn('⚠️ proxies.txt kosong, lanjut tanpa proxy');
-    return proxies;
-  } catch (e) {
-    console.warn('⚠️ Gagal baca proxies.txt, lanjut tanpa proxy:', e.message);
-    return [];
-  }
-}
-
 // ======================== ⚙️ CONFIGURATION ========================
 const erc20Abi = [
   'function balanceOf(address) view returns (uint)',
   'function decimals() view returns (uint8)',
   'function symbol() view returns (string)',
   'function approve(address, uint) returns (bool)'
+];
+
+// after: tambahkan tepat di atas `const globalConfig`
+const PROXIES = [
+  // format: 'http://user:pass@host:port'
+  'http://user1:pass1@proxy1.example.com:8080',
+  'http://user2:pass2@proxy2.example.com:8080'
 ];
 
 const globalConfig = {
@@ -325,38 +316,20 @@ class WalletBot {
     }
   }
 }
-
-// ======================== 🚀 MAIN EXECUTION ========================
+.
 (async () => {
-  try {
-    console.log('🔌 Initializing bot...');
-    
-    const keys = getPrivateKeys();
-    const proxies = getProxyUrls();
-    
-    console.log(`🔑 Loaded ${keys.length} wallet(s)`);
-    console.log(`🛡️ Available proxies: ${proxies.length}`);
+  const keys = getPrivateKeys();
+  const proxies = getProxyUrls();            // ← masih baca dari file
 
-    for (const [index, key] of keys.entries()) {
-      console.log(`\n💼 Processing wallet ${index + 1}/${keys.length}`);
-      const proxyUrl = proxies[index % proxies.length] || null;
-      const bot = new WalletBot(key, proxyUrl, globalConfig);
-      
-      const ip = await bot.getCurrentIp();
-      console.log(`🌍 Current IP: ${ip || 'No proxy detected'}`);
-      
-      await bot.runBot();
-      await delay(globalConfig.delayMs);
-    }
+  console.log(`🛡️ Available proxies: ${proxies.length}`);
 
-    console.log('\n🔄 Scheduling next run (24 hours)');
-    setTimeout(() => process.exit(0), 24 * 60 * 60 * 1000);
-    
-  } catch (e) {
-    console.error('💀 Critical error:', e);
-    process.exit(1);
+  for (const [i, key] of keys.entries()) {
+    const proxyUrl = proxies[i % proxies.length] || null;
+    const bot = new WalletBot(key, proxyUrl, globalConfig);
+    await bot.runBot();
   }
 })();
+
 
 // ======================== 🛡 ERROR HANDLING ========================
 process.on('unhandledRejection', (reason) => {
