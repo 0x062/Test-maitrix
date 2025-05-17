@@ -297,11 +297,10 @@ class WalletBot {
       debugLog('BOT_ERROR', e);
     }
   }
-}
-  
-  async getCurrentIp() {
+
+    async getCurrentIp() {
     try {
-      const res = await this.axios.get('https://api.ipify.org?format=json', { timeout: 5000 });
+      const res = await axios.get('https://api.ipify.org?format=json', { timeout: 5000 });
       return res.data.ip;
     } catch (e) {
       console.warn(`⚠️ Gagal fetch IP untuk ${this.address}:`, e.message);
