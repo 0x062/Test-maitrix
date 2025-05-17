@@ -96,9 +96,9 @@ class WalletBot {
     this.wallet = new ethers.Wallet(privateKey, this.provider);
     this.address = this.wallet.address;
     
-    this.provider.on('debug', (data) => {
-      debugLog('[RPC]', data);
-    });
+    //this.provider.on('debug', (data) => {
+    // debugLog('[RPC]', data);
+    //});
   }
 
   async getTokenBalance(tokenAddr) {
