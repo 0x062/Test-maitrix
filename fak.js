@@ -315,11 +315,13 @@ async init() {
   console.log(`🛡️ Using ${proxies.length} hardcoded proxy(s)`);
   console.log(`🔑 Loaded ${keys.length} wallet(s)`);
   for (const [index, key] of keys.entries()) {
+    const proxyUrl = proxies[index % proxies.length] || null;
     const bot = new WalletBot(key, proxyUrl, globalConfig);
     await bot.init();
     const ip = await bot.getCurrentIp();
     console.log(`🌍 Current IP: ${ip || 'No proxy detected'}`);
     await bot.runBot();
+    await delay(globalConfig.delayMs);
   }
 
   console.log('\n🔄 Scheduling next run (24 hours)');
