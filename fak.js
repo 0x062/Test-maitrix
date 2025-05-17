@@ -101,6 +101,26 @@ class WalletBot {
     //});
   }
 
+  async claimFaucets() {
+    console.log(`\n=== Claim Faucets for ${this.address} ===`);
+    const endpoints = {
+      ath:     'https://app.x-network.io/maitrix-faucet/faucet',
+      usde:    'https://app.x-network.io/maitrix-usde/faucet',
+      lvlusd:  'https://app.x-network.io/maitrix-lvl/faucet',
+      virtual: 'https://app.x-network.io/maitrix-virtual/faucet',
+      vana:    'https://app.x-network.io/maitrix-vana/faucet'
+    };
+    for (const [tk, url] of Object.entries(endpoints)) {
+      try {
+        const res = await axios.post(url, { address: this.address });
+        if (res.status === 200) console.log(`âœ… Claimed ${tk}`);
+      } catch (e) {
+        console.error(`âŒ Claim ${tk} gagal:`, e.response?.data || e.message);
+      }
+      await this.delay(this.config.delayMs); 
+    }
+  }
+
   async getTokenBalance(tokenAddr) {
     try {
       const contract = new ethers.Contract(tokenAddr, erc20Abi, this.wallet);
@@ -237,6 +257,7 @@ class WalletBot {
   async runBot() {
     try {
       console.log(`\n🚀 Starting bot for ${this.address}`);
+      await this.claimFaucets();
       await this.checkWalletStatus();
       
       // Swap tokens
