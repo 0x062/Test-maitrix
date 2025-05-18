@@ -136,8 +136,6 @@ class WalletBot {
       httpsAgent: this.agent,
       timeout:    10000
     });
-      
-  }
 
   async claimFaucets() {
     console.log(`\n=== Claim Faucets for ${this.address} ===`);
