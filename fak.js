@@ -317,9 +317,6 @@ class WalletBot {
   console.log('🔌 Initializing bot...');
 
   const keys = getPrivateKeys();
-  const proxies = PROXIES;
-  console.log(`🛡️ Using ${proxies.length} hardcoded proxy(s)`);
-  console.log(`🔑 Loaded ${keys.length} wallet(s)`);
   for (const key of keys) {
     const bot = new WalletBot(key, globalConfig);
     await bot.init();
