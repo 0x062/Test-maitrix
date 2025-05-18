@@ -136,6 +136,7 @@ class WalletBot {
       httpsAgent: this.agent,
       timeout:    10000
     });
+    }
   }
 
   async claimFaucets() {
