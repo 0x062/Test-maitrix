@@ -136,6 +136,7 @@ class WalletBot {
       httpsAgent: this.agent,
       timeout:    10000
     });
+  }
 
   async claimFaucets() {
     console.log(`\n=== Claim Faucets for ${this.address} ===`);
@@ -146,7 +147,7 @@ class WalletBot {
       virtual: 'https://app.x-network.io/maitrix-virtual/faucet',
       vana:    'https://app.x-network.io/maitrix-vana/faucet',
       ai16z:    'https://app.x-network.io/maitrix-ai16z/faucet'
-    };
+    }
     
     for (const [tk, url] of Object.entries(endpoints)) {
       try {
