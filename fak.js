@@ -2,10 +2,13 @@ const { ethers } = require('ethers');
 const { sendReport } = require('./telegramReporter');
 const axios = require('axios');
 const fs = require('fs');
+const { SocksProxyAgent } = require('socks-proxy-agent');
 const path = require('path');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const dns = require('dns').promises;
 require('dotenv').config();
+
+const TOR_PROXY = process.env.TOR_PROXY || null;
 
 // ======================== 🛠 HELPER FUNCTIONS ========================
 const debugStream = fs.createWriteStream(
@@ -47,11 +50,6 @@ const erc20Abi = [
   'function decimals() view returns (uint8)',
   'function symbol() view returns (string)',
   'function approve(address, uint) returns (bool)'
-];
-
-const PROXIES = [
-  'http://user1:pass1@proxy1.example.com:8080',
-  'http://user2:pass2@proxy2.example.com:8080'
 ];
 
 const globalConfig = {
@@ -97,10 +95,10 @@ const globalConfig = {
 // ======================== 🤖 WALLET BOT CLASS ========================
 
 class WalletBot {
-  constructor(privateKey, proxyUrl, config) {
-    // simpan state
+  constructor(privateKey, config) {
+    
     this._key      = privateKey;
-    this._proxyUrl = proxyUrl;
+    this._proxyUrl = TOR_PROXY;
     this.config    = config;
     this.axios     = axios;
     this.agent     = null;
@@ -322,9 +320,8 @@ class WalletBot {
   const proxies = PROXIES;
   console.log(`🛡️ Using ${proxies.length} hardcoded proxy(s)`);
   console.log(`🔑 Loaded ${keys.length} wallet(s)`);
-  for (const [index, key] of keys.entries()) {
-    const proxyUrl = proxies[index % proxies.length] || null;
-    const bot = new WalletBot(key, proxyUrl, globalConfig);
+  for (const key of keys) {
+    const bot = new WalletBot(key, globalConfig);
     await bot.init();
     const ip = await bot.getCurrentIp();
     console.log(`🌍 Current IP: ${ip || 'No proxy detected'}`);
