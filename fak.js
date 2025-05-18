@@ -126,11 +126,17 @@ class WalletBot {
       console.log('🌐 No proxy configured');
       return;
     }
-    const { hostname, port } = new URL(proxyUrl);
+    const { hostname, port, protocol } = new URL(proxyUrl);
     await dns.lookup(hostname);
-    this.agent = new HttpsProxyAgent(proxyUrl);
-    this.axios = axios.create({ httpsAgent: this.agent, timeout: 10000 });
-    console.log(`🛡️ Using proxy: ${hostname}:${port}`);
+    if (protocol.startsWith('socks')) {
+      this.agent = new SocksProxyAgent(proxyUrl);
+
+    this.axios = axios.create({
+      httpAgent:  this.agent,
+      httpsAgent: this.agent,
+      timeout:    10000
+    });
+      
   }
 
   async claimFaucets() {
