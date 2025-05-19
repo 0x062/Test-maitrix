@@ -94,12 +94,6 @@ const globalConfig = {
   delayMs: 17000
 };
 
-function rotateTorIp() {
-  const cookie = execSync('xxd -ps /run/tor/control.authcookie').toString().trim();
-  // kirim SIGNAL NEWNYM
-  execSync(`printf "AUTHENTICATE ${cookie}\\r\\nSIGNAL NEWNYM\\r\\n" | nc localhost 9051`);
-}
-
 // ======================== 🤖 WALLET BOT CLASS ========================
 
 class WalletBot {
@@ -112,21 +106,34 @@ class WalletBot {
     this.agent     = null;
   }
 
-  // ▶️ Jangan tambahkan koma di akhir method ini
-  async init() {
+  async rotateTorIdentity() {
     try {
-      await this._setupProxy(this._proxyUrl);
-      this.provider = new ethers.providers.JsonRpcProvider({
-        url: this.config.rpc,
-        fetchOptions: this.agent ? { agent: this.agent } : undefined
-      });
-    } catch (e) {
-      console.warn('⚠️ Proxy setup gagal, lanjut tanpa proxy:', e.message);
-      this.provider = new ethers.providers.JsonRpcProvider(this.config.rpc);
+      const cookie = execSync('xxd -ps /run/tor/control.authcookie')
+        .toString().trim();
+      execSync(
+        `printf "AUTHENTICATE ${cookie}\\r\\nSIGNAL NEWNYM\\r\\n" | nc localhost 9051`
+      );
+      await delay(5000);
+      console.log('🔄 Tor identity rotated');
+      } catch (e) {
+      console.warn('⚠️ rotateTorIdentity gagal:', e.message);
+      }
     }
-    this.wallet  = new ethers.Wallet(this._key, this.provider);
-    this.address = this.wallet.address;
-  }   // ← pastikan di sini **tidak** ada `,`
+
+  async init(useNewIdentity = false) {
+    if (useNewIdentity) {
+      await this.rotateTorIdentity();
+      }
+    
+  await this._setupProxy(this._proxyUrl);
+  this.provider = new ethers.providers.JsonRpcProvider({
+    url: this.config.rpc,
+    fetchOptions: this.agent ? { agent: this.agent } : undefined
+  });
+  // inisialisasi wallet dan simpan address
+  this.wallet  = new ethers.Wallet(this._key, this.provider);
+  this.address = this.wallet.address;
+  }
 
   // ▶️ Method ini harus di dalam class, sejajar dengan init()
   async _setupProxy(proxyUrl) {
@@ -337,11 +344,9 @@ class WalletBot {
 
   const keys = getPrivateKeys();
   for (const key of keys) {
-    rotateTorIp();
-    console.log('🔄 Rotated Tor IP for new wallet');
-    await delay(5000);
     const bot = new WalletBot(key, globalConfig);
-    await bot.init();
+    console.log('▶️ Rotasi IP Tor sebelum init untuk tiap wallet');
+    await bot.init(true);
     const ip = await bot.getCurrentIp();
     console.log(`🌍 Current IP: ${ip || 'No proxy detected'}`);
     await bot.runBot();
