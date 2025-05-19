@@ -1,5 +1,6 @@
 require('dotenv').config();
 const { execSync } = require('child_process');
+exports.rotateTorIp = rotateTorIp;
 const { ethers } = require('ethers');
 const { sendReport } = require('./telegramReporter');
 const axios = require('axios');
