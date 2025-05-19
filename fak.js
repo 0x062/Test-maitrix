@@ -1,3 +1,6 @@
+require('dotenv').config();
+const { execSync } = require('child_process');
+exports.rotateTorIp = rotateTorIp;
 const { ethers } = require('ethers');
 const { sendReport } = require('./telegramReporter');
 const axios = require('axios');
@@ -6,7 +9,6 @@ const { SocksProxyAgent } = require('socks-proxy-agent');
 const path = require('path');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const dns = require('dns').promises;
-require('dotenv').config();
 
 const TOR_PROXY = process.env.TOR_PROXY || null;
 
@@ -92,6 +94,13 @@ const globalConfig = {
   delayMs: 17000
 };
 
+function rotateTorIp() {
+  // baca cookie Tor
+  const cookie = execSync('xxd -ps /run/tor/control.authcookie').toString().trim();
+  // kirim SIGNAL NEWNYM
+  execSync(`printf "AUTHENTICATE ${cookie}\\r\\nSIGNAL NEWNYM\\r\\n" | nc localhost 9051`);
+}
+
 // ======================== 🤖 WALLET BOT CLASS ========================
 
 class WalletBot {
@@ -130,13 +139,17 @@ class WalletBot {
     await dns.lookup(hostname);
     if (protocol.startsWith('socks')) {
       this.agent = new SocksProxyAgent(proxyUrl);
+      console.log(`🛡️ Using SOCKS5 proxy: ${hostname}:${port}`);
+    } else {
+      this.agent = new HttpsProxyAgent(proxyUrl);
+      console.log(`🛡️ Using HTTPS proxy: ${hostname}:${port}`);
 
     this.axios = axios.create({
       httpAgent:  this.agent,
       httpsAgent: this.agent,
+      proxy:      false,
       timeout:    10000
     });
-    }
   }
 
   async claimFaucets() {
@@ -324,6 +337,9 @@ class WalletBot {
 
   const keys = getPrivateKeys();
   for (const key of keys) {
+    rotateTorIp();
+    console.log('🔄 Rotated Tor IP for new wallet');
+    await delay(5000);
     const bot = new WalletBot(key, globalConfig);
     await bot.init();
     const ip = await bot.getCurrentIp();
