@@ -107,17 +107,14 @@ class WalletBot {
 
   async rotateTorIdentity() {
     try {
-      const cookie = execSync('xxd -ps /run/tor/control.authcookie')
-        .toString().trim();
-      execSync(
-        `printf "AUTHENTICATE ${cookie}\\r\\nSIGNAL NEWNYM\\r\\n" | nc localhost 9051`
-      );
+      const cookie = execSync('xxd -ps /run/tor/control.authcookie').toString().trim();
+      execSync(`printf "AUTHENTICATE ${cookie}\r\nSIGNAL NEWNYM\r\n" | nc localhost 9051`);
       await delay(5000);
       console.log('🔄 Tor identity rotated');
-      } catch (e) {
+    } catch (e) {
       console.warn('⚠️ rotateTorIdentity gagal:', e.message);
-      }
     }
+  }
 
   async init(useNewIdentity = false) {
     if (useNewIdentity) {
@@ -136,27 +133,29 @@ class WalletBot {
 
   // ▶️ Method ini harus di dalam class, sejajar dengan init()
   async _setupProxy(proxyUrl) {
-    if (!proxyUrl) {
-      console.log('🌐 No proxy configured');
-      return;
-    }
-    const { hostname, port, protocol } = new URL(proxyUrl);
-    await dns.lookup(hostname);
-    if (protocol.startsWith('socks')) {
-      this.agent = new SocksProxyAgent(proxyUrl);
-      console.log(`🛡️ Using SOCKS5 proxy: ${hostname}:${port}`);
-    } else {
-      this.agent = new HttpsProxyAgent(proxyUrl);
-      console.log(`🛡️ Using HTTPS proxy: ${hostname}:${port}`);
-
-    this.axios = axios.create({
-      httpAgent:  this.agent,
-      httpsAgent: this.agent,
-      proxy:      false,
-      timeout:    10000
-    });
-    }
+  if (!proxyUrl) {
+    console.log('🌐 No proxy configured');
+    return;
   }
+  const { hostname, port, protocol } = new URL(proxyUrl);
+  await dns.lookup(hostname);
+
+  if (protocol.startsWith('socks')) {
+    this.agent = new SocksProxyAgent(proxyUrl);
+    console.log(`🛡️ Using SOCKS5 proxy: ${hostname}:${port}`);
+  } else {
+    this.agent = new HttpsProxyAgent(proxyUrl);
+    console.log(`🛡️ Using HTTPS proxy: ${hostname}:${port}`);
+  }
+
+  // Buat axios instance terlepas dari jenis proxy
+  this.axios = axios.create({
+    httpAgent:  this.agent,
+    httpsAgent: this.agent,
+    proxy:      false,
+    timeout:    10000
+  });
+}
 
   async claimFaucets() {
     console.log(`\n=== Claim Faucets for ${this.address} ===`);
@@ -344,7 +343,6 @@ class WalletBot {
   const keys = getPrivateKeys();
   for (const key of keys) {
     const bot = new WalletBot(key, globalConfig);
-    console.log('▶️ Rotasi IP Tor sebelum init untuk tiap wallet');
     await bot.init(true);
     const ip = await bot.getCurrentIp();
     console.log(`🌍 Current IP: ${ip || 'No proxy detected'}`);
