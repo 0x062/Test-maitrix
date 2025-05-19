@@ -149,6 +149,7 @@ class WalletBot {
     this.axios = axios.create({
       httpAgent:  this.agent,
       httpsAgent: this.agent,
+      proxy:      false,
       timeout:    10000
     });
   }
