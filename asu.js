@@ -344,8 +344,6 @@ class WalletBot {
     await delay(globalConfig.delayMs);
   }
 
-  console.log('\n🔄 Scheduling next run (24 hours)');
-  setTimeout(() => process.exit(0), 24 * 60 * 60 * 1000);
 })();
 
 // ======================== 🛡 ERROR HANDLING ========================
