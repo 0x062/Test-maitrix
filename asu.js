@@ -402,6 +402,7 @@ class WalletBot {
   for (const key of keys) {
     rotateTorIp();
     console.log('🔄 Rotated Tor IP for new wallet');
+    await delay(5000);
     const bot = new WalletBot(key, globalConfig);
     await bot.init();
     const ip = await bot.getCurrentIp();
