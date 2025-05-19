@@ -149,6 +149,7 @@ class WalletBot {
       proxy:      false,
       timeout:    10000
     });
+    }
   }
 
   async claimFaucets() {
