@@ -204,61 +204,73 @@ class WalletBot {
   }
 
   async swapToken(tokenName) {
+  try {
+    console.log(`\nSwapping ${tokenName}...`);
+    const tokenAddr = this.config.tokens[tokenName];
+    const router    = this.config.routers[tokenName];
+    const methodId  = this.config.methodIds[`${tokenName}Swap`];
+    const tokenContract = new ethers.Contract(tokenAddr, erc20Abi, this.wallet);
+
+    if (!router || !methodId) {
+      throw new Error('Invalid router config!');
+    }
+
+    const { balance, formatted, symbol } = await this.getTokenBalance(tokenAddr);
+    if (balance.isZero()) {
+      console.log('Skipping: Zero balance');
+      return;
+    }
+
+    // — Await allowance dan cek
+    const allowance = await tokenContract.allowance(this.address, router);
+    if (allowance.lt(balance)) {
+      throw new Error('Insufficient allowance for swap');
+    }
+
+    const data = methodId + ethers.utils.defaultAbiCoder
+      .encode(['uint256'], [balance]).slice(2);
+
+    // Simulasi call untuk decode revert reason
     try {
-      console.log(`\nSwapping ${tokenName}...`);
-      const tokenAddr = this.config.tokens[tokenName];
-      const router    = this.config.routers[tokenName];
-      const methodId  = this.config.methodIds[`${tokenName}Swap`];
+      await this.provider.call({ to: router, data });
+    } catch (callError) {
+      const reason = callError.error?.message || callError.message;
+      throw new Error(`Call reverted: ${reason}`);
+    }
 
-      const tokenContract = new ethers.Contract(tokenAddr, erc20Abi, this.wallet);
-      const decimals       = await tokenContract.decimals();
-      const allowance      = await tokenContract.allowance(this.address, router);
-      if (allowance.lt((await this.getTokenBalance(tokenAddr)).balance)) {
-        throw new Error('Insufficient allowance for swap');
-      }
+    // Approve & tunggu mining
+    const approveTx = await tokenContract.approve(router, balance, {
+      gasLimit: this.config.gasLimit,
+      maxFeePerGas: this.config.maxFeePerGas,
+      maxPriorityFeePerGas: this.config.maxPriorityFeePerGas
+    });
+    await approveTx.wait();
+    await delay(this.config.delayMs);
 
-      if (!router || !methodId) throw new Error('Invalid router config!');
+    // Kirim transaksi swap
+    const tx = await this.wallet.sendTransaction({
+      to: router,
+      data,
+      gasLimit: this.config.gasLimit,
+      maxFeePerGas: this.config.maxFeePerGas,
+      maxPriorityFeePerGas: this.config.maxPriorityFeePerGas
+    });
+    console.log(`TX Hash: ${tx.hash}`);
+    await tx.wait();
+    console.log(`Swapped ${formatted} ${symbol}`);
 
-      const { balance, formatted, symbol } = await this.getTokenBalance(tokenAddr);
-      if (balance.isZero()) {
-        console.log('Skipping: Zero balance');
-        return;
-      }
-
-      const data = methodId + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
-      try {
-        await this.provider.call({ to: router, data });
-      } catch (callError) {
-        const reason = callError.error?.message || callError.message;
-        throw new Error(`Call reverted: ${reason}`);
-      }
-
-      const approveTx = await tokenContract.approve(router, balance, {
-        gasLimit: this.config.gasLimit,
-        maxFeePerGas: this.config.maxFeePerGas,
-        maxPriorityFeePerGas: this.config.maxPriorityFeePerGas
-       });
-      await approveTx.wait();
-      await delay(this.config.delayMs);
-      
-      const tx = await this.wallet.sendTransaction({
-       to: router,
-       data,
-       gasLimit: this.config.gasLimit,
-       maxFeePerGas: this.config.maxFeePerGas,
-       maxPriorityFeePerGas: this.config.maxPriorityFeePerGas
-     });
-     console.log(`TX Hash: ${tx.hash}`);
-     await tx.wait();
-     console.log(`Swapped ${formatted} ${symbol}`);
-    } catch (e) {
-      const errMsg = e.error?.message || e.message;
-      console.error(`Swap ${tokenName} failed: ${errMsg}`);
-      debugLog('SWAP_ERROR', { token: tokenName, error: errMsg });
+  } catch (e) {
+    const errMsg = e.error?.message || e.message;
+    console.error(`Swap ${tokenName} failed: ${errMsg}`);
+    debugLog('SWAP_ERROR', { token: tokenName, error: errMsg });
+    // Contoh bounded retry:
+    if ((e.retryCount || 0) < 3) {
+      e.retryCount = (e.retryCount || 0) + 1;
       await delay(5000);
       return this.swapToken(tokenName);
     }
   }
+}
 
   async stakeToken(tokenName, customAddr = null) {
     try {
