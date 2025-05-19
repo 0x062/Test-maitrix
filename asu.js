@@ -1,3 +1,5 @@
+require('dotenv').config();
+const { execSync } = require('child_process');
 const { ethers } = require('ethers');
 const { sendReport } = require('./telegramReporter');
 const axios = require('axios');
@@ -6,7 +8,6 @@ const { SocksProxyAgent } = require('socks-proxy-agent');
 const path = require('path');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const dns = require('dns').promises;
-require('dotenv').config();
 
 const TOR_PROXY = process.env.TOR_PROXY || null;
 
@@ -47,6 +48,7 @@ function delay(ms) {
 // ======================== ⚙️ CONFIGURATION ========================
 const erc20Abi = [
   'function balanceOf(address) view returns (uint)',
+  'function allowance(address owner, address spender) view returns (uint)',
   'function decimals() view returns (uint8)',
   'function symbol() view returns (string)',
   'function approve(address, uint) returns (bool)'
@@ -91,6 +93,13 @@ const globalConfig = {
   maxPriorityFeePerGas: ethers.utils.parseUnits('1', 'gwei'),
   delayMs: 17000
 };
+
+function rotateTorIp() {
+  // baca cookie Tor
+  const cookie = execSync('xxd -ps /run/tor/control.authcookie').toString().trim();
+  // kirim SIGNAL NEWNYM
+  execSync(`printf "AUTHENTICATE ${cookie}\\r\\nSIGNAL NEWNYM\\r\\n" | nc localhost 9051`);
+}
 
 // ======================== 🤖 WALLET BOT CLASS ========================
 
@@ -389,6 +398,8 @@ class WalletBot {
 
   const keys = getPrivateKeys();
   for (const key of keys) {
+    rotateTorIp();
+    console.log('🔄 Rotated Tor IP for new wallet');
     const bot = new WalletBot(key, globalConfig);
     await bot.init();
     const ip = await bot.getCurrentIp();
