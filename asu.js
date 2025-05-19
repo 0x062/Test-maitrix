@@ -305,11 +305,20 @@ class WalletBot {
         return;
       }
 
-      // 2) Cek allowance
+      // 2) Cek allowance, dan approve jika kurang
       const tokenContract = new ethers.Contract(tokenAddr, erc20Abi, this.wallet);
-      const allowance = await tokenContract.allowance(this.address, stakeContract);
+      let allowance = await tokenContract.allowance(this.address, stakeContract);
       if (allowance.lt(balance)) {
-        throw new Error('Insufficient allowance for stake');
+        console.log(`🔐 Allowance (${allowance.toString()}) < balance (${balance.toString()}), approving...`);
+        const approveTx = await tokenContract.approve(stakeContract, balance, {
+          gasLimit: this.config.gasLimit,
+          maxFeePerGas: this.config.maxFeePerGas,
+          maxPriorityFeePerGas: this.config.maxPriorityFeePerGas
+        });
+        await approveTx.wait();
+        console.log('🔐 Approve confirmed');
+        await delay(this.config.delayMs);
+        allowance = await tokenContract.allowance(this.address, stakeContract);
       }
 
       // 3) Simulasi call untuk revert reason (jika didukung)
@@ -322,16 +331,7 @@ class WalletBot {
         throw new Error(`Call reverted: ${reason}`);
       }
 
-      // 4) Approve & tunggu mining
-      const approveTx = await tokenContract.approve(stakeContract, balance, {
-        gasLimit: this.config.gasLimit,
-        maxFeePerGas: this.config.maxFeePerGas,
-        maxPriorityFeePerGas: this.config.maxPriorityFeePerGas
-      });
-      await approveTx.wait();
-      await delay(this.config.delayMs);
-
-      // 5) Kirim transaksi stake
+      // 4) Kirim transaksi stake
       const tx = await this.wallet.sendTransaction({
         to: stakeContract,
         data,
