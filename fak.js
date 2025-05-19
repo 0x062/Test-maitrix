@@ -95,7 +95,6 @@ const globalConfig = {
 };
 
 function rotateTorIp() {
-  // baca cookie Tor
   const cookie = execSync('xxd -ps /run/tor/control.authcookie').toString().trim();
   // kirim SIGNAL NEWNYM
   execSync(`printf "AUTHENTICATE ${cookie}\\r\\nSIGNAL NEWNYM\\r\\n" | nc localhost 9051`);
