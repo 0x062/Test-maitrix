@@ -1,6 +1,5 @@
 require('dotenv').config();
 const { execSync } = require('child_process');
-exports.WalletBot = WalletBot;
 const { ethers } = require('ethers');
 const { sendReport } = require('./telegramReporter');
 const axios = require('axios');
