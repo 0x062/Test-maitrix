@@ -273,30 +273,54 @@ class WalletBot {
 }
 
   async stakeToken(tokenName, customAddr = null) {
+  // Bounded retry counter
+  let retries = 0;
+  const maxRetries = 3;
+  const tokenAddr     = customAddr || this.config.tokens[tokenName];
+  const stakeContract = this.config.stakeContracts[tokenName];
+
+  if (!stakeContract) {
+    throw new Error('Invalid stake contract!');
+  }
+
+  while (true) {
     try {
       console.log(`\nStaking ${tokenName}...`);
-      const tokenAddr = customAddr || this.config.tokens[tokenName];
-      const stakeContract = this.config.stakeContracts[tokenName];
 
-      if (!stakeContract) throw new Error('Invalid stake contract!');
-
+      // 1) Cek saldo
       const { balance, formatted, symbol } = await this.getTokenBalance(tokenAddr);
       if (balance.isZero()) {
         console.log('Skipping: Zero balance');
         return;
       }
 
-      const approveTx = await new ethers.Contract(tokenAddr, erc20Abi, this.wallet)
-        .approve(stakeContract, balance, {
-          gasLimit: this.config.gasLimit,
-          maxFeePerGas: this.config.maxFeePerGas,
-          maxPriorityFeePerGas: this.config.maxPriorityFeePerGas
-        });
+      // 2) Cek allowance
+      const tokenContract = new ethers.Contract(tokenAddr, erc20Abi, this.wallet);
+      const allowance = await tokenContract.allowance(this.address, stakeContract);
+      if (allowance.lt(balance)) {
+        throw new Error('Insufficient allowance for stake');
+      }
+
+      // 3) Simulasi call untuk revert reason (jika didukung)
+      const data = this.config.methodIds.stake
+        + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
+      try {
+        await this.provider.call({ to: stakeContract, data });
+      } catch (callError) {
+        const reason = callError.error?.message || callError.message;
+        throw new Error(`Call reverted: ${reason}`);
+      }
+
+      // 4) Approve & tunggu mining
+      const approveTx = await tokenContract.approve(stakeContract, balance, {
+        gasLimit: this.config.gasLimit,
+        maxFeePerGas: this.config.maxFeePerGas,
+        maxPriorityFeePerGas: this.config.maxPriorityFeePerGas
+      });
       await approveTx.wait();
       await delay(this.config.delayMs);
 
-      const data = this.config.methodIds.stake
-        + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
+      // 5) Kirim transaksi stake
       const tx = await this.wallet.sendTransaction({
         to: stakeContract,
         data,
@@ -308,12 +332,23 @@ class WalletBot {
       await tx.wait();
       console.log(`Staked ${formatted} ${symbol}`);
       await sendReport(`✅ Stake *${tokenName}* berhasil\nHash: \`${tx.hash}\`\nJumlah: ${formatted} ${symbol}`);
+      return;
 
     } catch (e) {
-      console.error(`Stake failed: ${e.message}`);
-      debugLog('STAKE_ERROR', e);
+      const errMsg = e.error?.message || e.message;
+      console.error(`Stake ${tokenName} failed: ${errMsg}`);
+      debugLog('STAKE_ERROR', { token: tokenName, error: errMsg });
+
+      retries++;
+      if (retries >= maxRetries) {
+        console.error(`Max retries reached for staking ${tokenName}. Aborting.`);
+        return;
+      }
+      console.log(`Retrying stake ${tokenName} in 5s (${retries}/${maxRetries})...`);
+      await delay(5000);
     }
   }
+}
 
   async runBot() {
     try {
