@@ -130,13 +130,17 @@ class WalletBot {
     await dns.lookup(hostname);
     if (protocol.startsWith('socks')) {
       this.agent = new SocksProxyAgent(proxyUrl);
+      console.log(`🛡️ Using SOCKS5 proxy: ${hostname}:${port}`);
+    } else {
+      this.agent = new HttpsProxyAgent(proxyUrl);
+      console.log(`🛡️ Using HTTPS proxy: ${hostname}:${port}`);
+    }
 
     this.axios = axios.create({
       httpAgent:  this.agent,
       httpsAgent: this.agent,
       timeout:    10000
     });
-    }
   }
 
   async claimFaucets() {
@@ -221,9 +225,9 @@ class WalletBot {
         return;
       }
 
-      const callData = methodId + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
+      const data = methodId + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
       try {
-        await this.provider.call({ to: router, data: callData });
+        await this.provider.call({ to: router, data });
       } catch (callError) {
         const reason = callError.error?.message || callError.message;
         throw new Error(`Call reverted: ${reason}`);
@@ -234,6 +238,8 @@ class WalletBot {
         maxFeePerGas: this.config.maxFeePerGas,
         maxPriorityFeePerGas: this.config.maxPriorityFeePerGas
        });
+      await approveTx.wait();
+      await delay(this.config.delayMs);
       
       const tx = await this.wallet.sendTransaction({
        to: router,
