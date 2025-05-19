@@ -49,7 +49,6 @@ function delay(ms) {
 // ======================== ⚙️ CONFIGURATION ========================
 const erc20Abi = [
   'function balanceOf(address) view returns (uint)',
-  'function allowance(address owner, address spender) view returns (uint)',
   'function decimals() view returns (uint8)',
   'function symbol() view returns (string)',
   'function approve(address, uint) returns (bool)'
@@ -144,7 +143,6 @@ class WalletBot {
     } else {
       this.agent = new HttpsProxyAgent(proxyUrl);
       console.log(`🛡️ Using HTTPS proxy: ${hostname}:${port}`);
-    }
 
     this.axios = axios.create({
       httpAgent:  this.agent,
@@ -215,123 +213,73 @@ class WalletBot {
   }
 
   async swapToken(tokenName) {
-  try {
-    console.log(`\nSwapping ${tokenName}...`);
-    const tokenAddr = this.config.tokens[tokenName];
-    const router    = this.config.routers[tokenName];
-    const methodId  = this.config.methodIds[`${tokenName}Swap`];
-    const tokenContract = new ethers.Contract(tokenAddr, erc20Abi, this.wallet);
-
-    if (!router || !methodId) {
-      throw new Error('Invalid router config!');
-    }
-
-    const { balance, formatted, symbol } = await this.getTokenBalance(tokenAddr);
-    if (balance.isZero()) {
-      console.log('Skipping: Zero balance');
-      return;
-    }
-
-    // — Await allowance dan cek
-    const allowance = await tokenContract.allowance(this.address, router);
-    if (allowance.lt(balance)) {
-      throw new Error('Insufficient allowance for swap');
-    }
-
-    const data = methodId + ethers.utils.defaultAbiCoder
-      .encode(['uint256'], [balance]).slice(2);
-
-    // Simulasi call untuk decode revert reason
     try {
-      await this.provider.call({ to: router, data });
-    } catch (callError) {
-      const reason = callError.error?.message || callError.message;
-      throw new Error(`Call reverted: ${reason}`);
-    }
+      console.log(`\nSwapping ${tokenName}...`);
+      const tokenAddr = this.config.tokens[tokenName];
+      const router    = this.config.routers[tokenName];
+      const methodId  = this.config.methodIds[`${tokenName}Swap`];
 
-    // Approve & tunggu mining
-    const approveTx = await tokenContract.approve(router, balance, {
-      gasLimit: this.config.gasLimit,
-      maxFeePerGas: this.config.maxFeePerGas,
-      maxPriorityFeePerGas: this.config.maxPriorityFeePerGas
-    });
-    await approveTx.wait();
-    await delay(this.config.delayMs);
+      if (!router || !methodId) throw new Error('Invalid router config!');
 
-    // Kirim transaksi swap
-    const tx = await this.wallet.sendTransaction({
-      to: router,
-      data,
-      gasLimit: this.config.gasLimit,
-      maxFeePerGas: this.config.maxFeePerGas,
-      maxPriorityFeePerGas: this.config.maxPriorityFeePerGas
-    });
-    console.log(`TX Hash: ${tx.hash}`);
-    await tx.wait();
-    console.log(`Swapped ${formatted} ${symbol}`);
-
-  } catch (e) {
-    const errMsg = e.error?.message || e.message;
-    console.error(`Swap ${tokenName} failed: ${errMsg}`);
-    debugLog('SWAP_ERROR', { token: tokenName, error: errMsg });
-    // Contoh bounded retry:
-    if ((e.retryCount || 0) < 3) {
-      e.retryCount = (e.retryCount || 0) + 1;
-      await delay(5000);
-      return this.swapToken(tokenName);
-    }
-  }
-}
-
-  async stakeToken(tokenName, customAddr = null) {
-  // Bounded retry counter
-  let retries = 0;
-  const maxRetries = 3;
-  const tokenAddr     = customAddr || this.config.tokens[tokenName];
-  const stakeContract = this.config.stakeContracts[tokenName];
-
-  if (!stakeContract) {
-    throw new Error('Invalid stake contract!');
-  }
-
-  while (true) {
-    try {
-      console.log(`\nStaking ${tokenName}...`);
-
-      // 1) Cek saldo
       const { balance, formatted, symbol } = await this.getTokenBalance(tokenAddr);
       if (balance.isZero()) {
         console.log('Skipping: Zero balance');
         return;
       }
 
-      // 2) Cek allowance, dan approve jika kurang
-      const tokenContract = new ethers.Contract(tokenAddr, erc20Abi, this.wallet);
-      let allowance = await tokenContract.allowance(this.address, stakeContract);
-      if (allowance.lt(balance)) {
-        console.log(`🔐 Allowance (${allowance.toString()}) < balance (${balance.toString()}), approving...`);
-        const approveTx = await tokenContract.approve(stakeContract, balance, {
+      const approveTx = await new ethers.Contract(tokenAddr, erc20Abi, this.wallet)
+        .approve(router, balance, {
           gasLimit: this.config.gasLimit,
           maxFeePerGas: this.config.maxFeePerGas,
           maxPriorityFeePerGas: this.config.maxPriorityFeePerGas
         });
-        await approveTx.wait();
-        console.log('🔐 Approve confirmed');
-        await delay(this.config.delayMs);
-        allowance = await tokenContract.allowance(this.address, stakeContract);
+      await approveTx.wait();
+      await delay(this.config.delayMs);
+
+      const data = methodId + ethers.utils.defaultAbiCoder
+        .encode(['uint256'], [balance]).slice(2);
+      const tx = await this.wallet.sendTransaction({
+        to: router,
+        data,
+        gasLimit: this.config.gasLimit,
+        maxFeePerGas: this.config.maxFeePerGas,
+        maxPriorityFeePerGas: this.config.maxPriorityFeePerGas
+      });
+      console.log(`TX Hash: ${tx.hash}`);
+      await tx.wait();
+      console.log(`Swapped ${formatted} ${symbol}`);
+
+    } catch (e) {
+      console.error(`Swap failed: ${e.message}`);
+      debugLog('SWAP_ERROR', e);
+    }
+  }
+
+  async stakeToken(tokenName, customAddr = null) {
+    try {
+      console.log(`\nStaking ${tokenName}...`);
+      const tokenAddr = customAddr || this.config.tokens[tokenName];
+      const stakeContract = this.config.stakeContracts[tokenName];
+
+      if (!stakeContract) throw new Error('Invalid stake contract!');
+
+      const { balance, formatted, symbol } = await this.getTokenBalance(tokenAddr);
+      if (balance.isZero()) {
+        console.log('Skipping: Zero balance');
+        return;
       }
 
-      // 3) Simulasi call untuk revert reason (jika didukung)
+      const approveTx = await new ethers.Contract(tokenAddr, erc20Abi, this.wallet)
+        .approve(stakeContract, balance, {
+          gasLimit: this.config.gasLimit,
+          maxFeePerGas: this.config.maxFeePerGas,
+          maxPriorityFeePerGas: this.config.maxPriorityFeePerGas
+        });
+      await approveTx.wait();
+      await delay(this.config.delayMs);
+
       const data = this.config.methodIds.stake
         + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
-      try {
-        await this.provider.call({ to: stakeContract, data });
-      } catch (callError) {
-        const reason = callError.error?.message || callError.message;
-        throw new Error(`Call reverted: ${reason}`);
-      }
-
-      // 4) Kirim transaksi stake
       const tx = await this.wallet.sendTransaction({
         to: stakeContract,
         data,
@@ -343,23 +291,12 @@ class WalletBot {
       await tx.wait();
       console.log(`Staked ${formatted} ${symbol}`);
       await sendReport(`✅ Stake *${tokenName}* berhasil\nHash: \`${tx.hash}\`\nJumlah: ${formatted} ${symbol}`);
-      return;
 
     } catch (e) {
-      const errMsg = e.error?.message || e.message;
-      console.error(`Stake ${tokenName} failed: ${errMsg}`);
-      debugLog('STAKE_ERROR', { token: tokenName, error: errMsg });
-
-      retries++;
-      if (retries >= maxRetries) {
-        console.error(`Max retries reached for staking ${tokenName}. Aborting.`);
-        return;
-      }
-      console.log(`Retrying stake ${tokenName} in 5s (${retries}/${maxRetries})...`);
-      await delay(5000);
+      console.error(`Stake failed: ${e.message}`);
+      debugLog('STAKE_ERROR', e);
     }
   }
-}
 
   async runBot() {
     try {
@@ -411,6 +348,8 @@ class WalletBot {
     await delay(globalConfig.delayMs);
   }
 
+  console.log('\n🔄 Scheduling next run (24 hours)');
+  setTimeout(() => process.exit(0), 24 * 60 * 60 * 1000);
 })();
 
 // ======================== 🛡 ERROR HANDLING ========================
