@@ -14,6 +14,7 @@
     "axios": "latest",
     "dotenv": "latest",
     "ethers": "^5.7.2",
+    "proxy-agent": "latest",
     "node-fetch": "latest",
     "https-proxy-agent": "latest",
     "socks-proxy-agent": "latest"
