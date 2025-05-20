@@ -1,6 +1,6 @@
 require('dotenv').config();
 const { execSync } = require('child_process');
-const ethers = require('ethers');
+const { ethers } = require('ethers');
 const { sendReport } = require('./telegramReporter');
 const axios = require('axios');
 const fs = require('fs');
@@ -88,9 +88,9 @@ const globalConfig = {
     stake:       '0xa694fc3a'
   },
   gasLimit: 1000000,
-  maxFeePerGas: ethers.parseUnits('2', 'gwei'),
-  maxPriorityFeePerGas: ethers.parseUnits('1', 'gwei'),
-  delayMs: 17000
+  maxFeePerGas: ethers.utils.parseUnits('2', 'gwei'),
+  maxPriorityFeePerGas: ethers.utils.parseUnits('1', 'gwei'),
+  delayMs: 20000
 };
 
 // ======================== 🤖 WALLET BOT CLASS ========================
