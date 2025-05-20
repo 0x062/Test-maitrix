@@ -337,6 +337,8 @@ class WalletBot {
         console.warn(`⚠️ IP fetch failed at ${svc.url}: ${err.response?.status || err.message}`);
       }
   }
+    console.error('❌ Semua endpoint IP gagal, IP tetap null');
+    return null;
 }
 
 (async () => {
