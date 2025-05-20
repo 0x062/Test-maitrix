@@ -320,14 +320,22 @@ class WalletBot {
   }
 
   async getCurrentIp() {
-    try {
-      const res = await this.axios.get('https://api.ipify.org?format=json');
-      console.log(`🌍 Proxy IP: ${res.data.ip}`);
-      return res.data.ip;
-    } catch (e) {
-      console.warn(`⚠️ Failed to fetch IP: ${e.message}`);
-      return null;
-    }
+
+    const services = [
+      { url: 'https://api.ipify.org?format=json',
+      { url: 'https://ifconfig.co/json',
+      { url: 'https://ident.me',
+    ];
+
+    for (const svc of services) {
+      try {
+        const res = await this.axios.get(svc.url);
+        const ip  = svc.parse(res);
+        console.log(`🌍 Proxy IP (via ${svc.url}): ${ip}`);
+        return ip;
+      } catch (err) {
+        console.warn(`⚠️ IP fetch failed at ${svc.url}: ${err.response?.status || err.message}`);
+      }
   }
 }
 
