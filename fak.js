@@ -111,7 +111,7 @@ class WalletBot {
     try {
       const cookie = execSync('xxd -ps /run/tor/control.authcookie').toString().trim();
       execSync(`printf "AUTHENTICATE ${cookie}\r\nSIGNAL NEWNYM\r\n" | nc localhost 9051`);
-      await delay(40000);
+      await delay(4000);
       console.log('🔄 Tor identity rotated');
     } catch (e) {
       console.warn('⚠️ rotateTorIdentity gagal:', e.message);
@@ -135,28 +135,20 @@ class WalletBot {
 
   // ▶️ Method ini harus di dalam class, sejajar dengan init()
   async _setupProxy(proxyUrl) {
-  if (!proxyUrl) {
-    console.log('🌐 No proxy configured');
-    return;
+    if (!this._proxyUrl) {
+      console.log('🌐 No proxy configured');
+      return;
+    }
+
+    this.agent = new SocksProxyAgent(this._proxyUrl);
+    console.log(`🛡️ Using SOCKS proxy: ${this._proxyUrl}`);
+    this.axios = axios.create({
+      httpAgent: this.agent,
+      httpsAgent: this.agent,
+      proxy: false,
+      timeout: 10000,
+      });
   }
-
-  if (proxyUrl.startsWith('socks5://')) {
-    proxyUrl = proxyUrl.replace('socks5://', 'socks5h://');
-  }
-
-  const { hostname, port } = new URL(proxyUrl);
-  await dns.lookup(hostname); // pastikan resolve
-  this.agent = new ProxyAgent(proxyUrl);
-  console.log(`🛡️ Using proxy via ProxyAgent: ${hostname}:${port}`);
-
-  // axios instance dengan proxy
-  this.axios = axios.create({
-    httpAgent: this.agent,
-    httpsAgent: this.agent,
-    proxy: false,
-    timeout: 10000,
-  });
-}
 
   async claimFaucets() {
     console.log(`\n=== Claim Faucets for ${this.address} ===`);
@@ -343,19 +335,17 @@ class WalletBot {
   console.log('🔌 Initializing bot...');
 
   const keys = getPrivateKeys();
-  for (const key of keys) {
-    const bot = new WalletBot(key, globalConfig);
+  const torProxy = process.env.TOR_PROXY;
+  for (let i = 0; i < keys.length; i++) {
+    const bot = new WalletBot(keys[i], globalConfig, torProxy);
     await bot.rotateTorIdentity();
-    await delay(33000);
+    await delay(65000);
     await bot.init();
-    const ip = await bot.getCurrentIp();
-    console.log(`🌍 Current IP: ${ip || 'No proxy detected'}`);
+    console.log(`🌍 Wallet ${i+1} IP:`, await bot.getCurrentIp());
     await bot.runBot();
     await delay(globalConfig.delayMs);
   }
 
-  console.log('\n🔄 Scheduling next run (24 hours)');
-  setTimeout(() => process.exit(0), 24 * 60 * 60 * 1000);
 })();
 
 // ======================== 🛡 ERROR HANDLING ========================
