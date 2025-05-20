@@ -111,7 +111,7 @@ class WalletBot {
     try {
       const cookie = execSync('xxd -ps /run/tor/control.authcookie').toString().trim();
       execSync(`printf "AUTHENTICATE ${cookie}\r\nSIGNAL NEWNYM\r\n" | nc localhost 9051`);
-      await delay(15000);
+      await delay(40000);
       console.log('🔄 Tor identity rotated');
     } catch (e) {
       console.warn('⚠️ rotateTorIdentity gagal:', e.message);
@@ -346,7 +346,7 @@ class WalletBot {
   for (const key of keys) {
     const bot = new WalletBot(key, globalConfig);
     await bot.rotateTorIdentity();
-    await delay(7000);
+    await delay(33000);
     await bot.init();
     const ip = await bot.getCurrentIp();
     console.log(`🌍 Current IP: ${ip || 'No proxy detected'}`);
