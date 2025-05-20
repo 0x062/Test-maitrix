@@ -13,7 +13,7 @@
   "dependencies": {
     "axios": "latest",
     "dotenv": "latest",
-    "ethers": "latest",
+    "ethers": "^5.7.2",
     "https-proxy-agent": "latest",
     "socks-proxy-agent": "latest"
   },
