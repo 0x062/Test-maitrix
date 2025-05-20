@@ -1,18 +1,25 @@
 {
-  "name": "daily-maitrix",
+  "name": "wallet-bot",
   "version": "1.0.0",
-  "description": "Automated swap and stake bot for Maitrix on Arbitrum Sepolia",
-  "main": "bot.js",
+  "description": "Automated wallet bot with Tor proxy rotation, token swaps, and staking",
+  "main": "index.js",
   "scripts": {
-    "start": "node bot.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "lint": "eslint ."
   },
-  "keywords": ["bot", "ethers", "swap", "stake", "maitrix"],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "dependencies": {
-    "axios": "^1.9.0",
-    "dotenv": "^16.5.0",
-    "ethers": "^5.8.0"
+    "axios": "^1.4.0",
+    "child_process": "^1.0.2",
+    "dotenv": "^16.0.3",
+    "ethers": "^6.6.0",
+    "https-proxy-agent": "^7.1.0",
+    "socks-proxy-agent": "^7.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.22",
+    "eslint": "^8.43.0"
   }
 }
