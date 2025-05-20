@@ -11,15 +11,14 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "axios": "^1.4.0",
-    "child_process": "^1.0.2",
-    "dotenv": "^16.0.3",
-    "ethers": "^6.6.0",
-    "https-proxy-agent": "^7.1.0",
-    "socks-proxy-agent": "^7.0.0"
+    "axios": "latest",
+    "dotenv": "latest",
+    "ethers": "latest",
+    "https-proxy-agent": "latest",
+    "socks-proxy-agent": "latest"
   },
   "devDependencies": {
-    "nodemon": "^2.0.22",
-    "eslint": "^8.43.0"
+    "nodemon": "latest",
+    "eslint": "latest"
   }
 }
