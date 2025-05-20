@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { execSync } = require('child_process');
 const fetch = require('node-fetch');
-const ProxyAgent = require('proxy-agent');
+const { ProxyAgent } = require('proxy-agent');
 const { ethers } = require('ethers');
 const { sendReport } = require('./telegramReporter');
 const axios = require('axios');
