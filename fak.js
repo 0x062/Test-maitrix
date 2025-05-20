@@ -1,5 +1,6 @@
 require('dotenv').config();
 const { execSync } = require('child_process');
+import fetch from 'node-fetch';
 const { ethers } = require('ethers');
 const { sendReport } = require('./telegramReporter');
 const axios = require('axios');
