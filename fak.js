@@ -322,9 +322,9 @@ class WalletBot {
   async getCurrentIp() {
 
     const services = [
-      { url: 'https://api.ipify.org?format=json' },
-      { url: 'https://ifconfig.co/json' },
-      { url: 'https://ident.me' }
+      { url: 'https://api.ipify.org?format=json', parse: r => r.data.ip }
+      { url: 'https://ifconfig.co/json', parse: r => r.data.ip },
+      { url: 'https://ident.me', parse: r => r.data.trim() }
     ];
 
     for (const svc of services) {
