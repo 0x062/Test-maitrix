@@ -1,6 +1,7 @@
 require('dotenv').config();
 const { execSync } = require('child_process');
 const fetch = require('node-fetch');
+const ProxyAgent = require('proxy-agent');
 const { ethers } = require('ethers');
 const { sendReport } = require('./telegramReporter');
 const axios = require('axios');
@@ -142,19 +143,18 @@ class WalletBot {
   if (proxyUrl.startsWith('socks5://')) {
     proxyUrl = proxyUrl.replace('socks5://', 'socks5h://');
   }
-    
-  const { hostname, port } = new URL(proxyUrl);
-  await dns.lookup(hostname);
-    
-  this.agent = new SocksProxyAgent(proxyUrl);
-  console.log(`🛡️ Using SOCKS5 proxy (Tor): ${hostname}:${port}`);
 
-  // Buat axios instance terlepas dari jenis proxy
+  const { hostname, port } = new URL(proxyUrl);
+  await dns.lookup(hostname); // pastikan resolve
+  this.agent = new ProxyAgent(proxyUrl);
+  console.log(`🛡️ Using proxy via ProxyAgent: ${hostname}:${port}`);
+
+  // axios instance dengan proxy
   this.axios = axios.create({
-    httpAgent:  this.agent,
+    httpAgent: this.agent,
     httpsAgent: this.agent,
-    proxy:      false,
-    timeout:    10000
+    proxy: false,
+    timeout: 10000,
   });
 }
 
@@ -329,10 +329,11 @@ class WalletBot {
 
   async getCurrentIp() {
     try {
-      const res = await this.axios.get('https://api.ipify.org?format=json', { timeout: 5000 });
+      const res = await this.axios.get('https://api.ipify.org?format=json');
+      console.log(`🌍 Proxy IP: ${res.data.ip}`);
       return res.data.ip;
     } catch (e) {
-      console.warn(`⚠️ Failed to fetch IP for ${this.address}:`, e.message);
+      console.warn(`⚠️ Failed to fetch IP: ${e.message}`);
       return null;
     }
   }
