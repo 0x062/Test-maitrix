@@ -124,7 +124,7 @@ class WalletBot {
   await this._setupProxy(this._proxyUrl);
   this.provider = new ethers.providers.JsonRpcProvider({
     url: this.config.rpc,
-    fetchOptions: this.agent ? { agent: this.agent } : undefined
+    fetch: (url, init) => fetch(url, { ...init, agent: this.agent })
   });
   // inisialisasi wallet dan simpan address
   this.wallet  = new ethers.Wallet(this._key, this.provider);
@@ -137,16 +137,16 @@ class WalletBot {
     console.log('🌐 No proxy configured');
     return;
   }
-  const { hostname, port, protocol } = new URL(proxyUrl);
-  await dns.lookup(hostname);
 
-  if (protocol.startsWith('socks')) {
-    this.agent = new SocksProxyAgent(proxyUrl);
-    console.log(`🛡️ Using SOCKS5 proxy: ${hostname}:${port}`);
-  } else {
-    this.agent = new HttpsProxyAgent(proxyUrl);
-    console.log(`🛡️ Using HTTPS proxy: ${hostname}:${port}`);
+  if (proxyUrl.startsWith('socks5://')) {
+    proxyUrl = proxyUrl.replace('socks5://', 'socks5h://');
   }
+    
+  const { hostname, port } = new URL(proxyUrl);
+  await dns.lookup(hostname);
+    
+  this.agent = new SocksProxyAgent(proxyUrl);
+  console.log(`🛡️ Using SOCKS5 proxy (Tor): ${hostname}:${port}`);
 
   // Buat axios instance terlepas dari jenis proxy
   this.axios = axios.create({
