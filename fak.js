@@ -103,6 +103,7 @@ class WalletBot {
     this.config    = config;
     this.axios     = axios;
     this.agent     = null;
+    this._reportBuffer = [];
   }
 
   async rotateTorIdentity() {
@@ -258,7 +259,11 @@ class WalletBot {
       console.log(`TX Hash: ${tx.hash}`);
       await tx.wait();
       console.log(`Staked ${formatted} ${symbol}`);
-      await sendReport(`✅ Stake *${tokenName}* berhasil\nHash: \`${tx.hash}\`\nJumlah: ${formatted} ${symbol}`);
+      this._reportBuffer.push(
+        `✅ Stake *${tokenName}* berhasil\n` +
+        `Hash: \`${tx.hash}\`\n` +
+        `Jumlah: ${formatted} ${symbol}`
+      );
     } catch (e) {
       console.error(`Stake failed: ${e.message}`);
       debugLog('STAKE_ERROR', e);
@@ -280,6 +285,11 @@ class WalletBot {
       await this.stakeToken('vusd');
       await this.stakeToken('vnusd', '0x46a6585a0Ad1750d37B4e6810EB59cBDf591Dc30');
       await this.stakeToken('azusd', '0x5966cd11aED7D68705C9692e74e5688C892cb162');
+      if (this._reportBuffer.length > 0) {
+        const fullReport = this._reportBuffer.join('\n\n');
+        await sendReport(fullReport);
+        this._reportBuffer = [];
+      }
       await this.checkWalletStatus();
       console.log(`✅ Finished ${this.address}`);
     } catch (e) {
