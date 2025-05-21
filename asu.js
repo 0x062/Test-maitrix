@@ -1,6 +1,5 @@
 require('dotenv').config();
 const { execSync } = require('child_process');
-exports.rotateTorIp = rotateTorIp;
 const { ethers } = require('ethers');
 const { sendReport } = require('./telegramReporter');
 const axios = require('axios');
@@ -12,7 +11,7 @@ const dns = require('dns').promises;
 
 const TOR_PROXY = process.env.TOR_PROXY || null;
 
-// ======================== 🛠 HELPER FUNCTIONS ========================
+// ======================== ðŸ›  HELPER FUNCTIONS ========================
 const debugStream = fs.createWriteStream(
   path.join(__dirname, 'debugging.log'), 
   { flags: 'a' }
@@ -46,7 +45,7 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// ======================== ⚙️ CONFIGURATION ========================
+// ======================== âš™ï¸ CONFIGURATION ========================
 const erc20Abi = [
   'function balanceOf(address) view returns (uint)',
   'function decimals() view returns (uint8)',
@@ -94,14 +93,7 @@ const globalConfig = {
   delayMs: 17000
 };
 
-function rotateTorIp() {
-  // baca cookie Tor
-  const cookie = execSync('xxd -ps /run/tor/control.authcookie').toString().trim();
-  // kirim SIGNAL NEWNYM
-  execSync(`printf "AUTHENTICATE ${cookie}\\r\\nSIGNAL NEWNYM\\r\\n" | nc localhost 9051`);
-}
-
-// ======================== 🤖 WALLET BOT CLASS ========================
+// ======================== ðŸ¤– WALLET BOT CLASS ========================
 
 class WalletBot {
   constructor(privateKey, config) {
@@ -113,44 +105,57 @@ class WalletBot {
     this.agent     = null;
   }
 
-  // ▶️ Jangan tambahkan koma di akhir method ini
-  async init() {
+  async rotateTorIdentity() {
     try {
-      await this._setupProxy(this._proxyUrl);
-      this.provider = new ethers.providers.JsonRpcProvider({
-        url: this.config.rpc,
-        fetchOptions: this.agent ? { agent: this.agent } : undefined
-      });
+      const cookie = execSync('xxd -ps /run/tor/control.authcookie').toString().trim();
+      execSync(`printf "AUTHENTICATE ${cookie}\r\nSIGNAL NEWNYM\r\n" | nc localhost 9051`);
+      await delay(5000);
+      console.log('ðŸ”„ Tor identity rotated');
     } catch (e) {
-      console.warn('⚠️ Proxy setup gagal, lanjut tanpa proxy:', e.message);
-      this.provider = new ethers.providers.JsonRpcProvider(this.config.rpc);
+      console.warn('âš ï¸ rotateTorIdentity gagal:', e.message);
     }
-    this.wallet  = new ethers.Wallet(this._key, this.provider);
-    this.address = this.wallet.address;
-  }   // ← pastikan di sini **tidak** ada `,`
-
-  // ▶️ Method ini harus di dalam class, sejajar dengan init()
-  async _setupProxy(proxyUrl) {
-    if (!proxyUrl) {
-      console.log('🌐 No proxy configured');
-      return;
-    }
-    const { hostname, port, protocol } = new URL(proxyUrl);
-    await dns.lookup(hostname);
-    if (protocol.startsWith('socks')) {
-      this.agent = new SocksProxyAgent(proxyUrl);
-      console.log(`🛡️ Using SOCKS5 proxy: ${hostname}:${port}`);
-    } else {
-      this.agent = new HttpsProxyAgent(proxyUrl);
-      console.log(`🛡️ Using HTTPS proxy: ${hostname}:${port}`);
-
-    this.axios = axios.create({
-      httpAgent:  this.agent,
-      httpsAgent: this.agent,
-      proxy:      false,
-      timeout:    10000
-    });
   }
+
+  async init(useNewIdentity = false) {
+    if (useNewIdentity) {
+      await this.rotateTorIdentity();
+      }
+    
+  await this._setupProxy(this._proxyUrl);
+  this.provider = new ethers.providers.JsonRpcProvider({
+    url: this.config.rpc,
+    fetchOptions: this.agent ? { agent: this.agent } : undefined
+  });
+  // inisialisasi wallet dan simpan address
+  this.wallet  = new ethers.Wallet(this._key, this.provider);
+  this.address = this.wallet.address;
+  }
+
+  // â–¶ï¸ Method ini harus di dalam class, sejajar dengan init()
+  async _setupProxy(proxyUrl) {
+  if (!proxyUrl) {
+    console.log('ðŸŒ No proxy configured');
+    return;
+  }
+  const { hostname, port, protocol } = new URL(proxyUrl);
+  await dns.lookup(hostname);
+
+  if (protocol.startsWith('socks')) {
+    this.agent = new SocksProxyAgent(proxyUrl);
+    console.log(`ðŸ›¡ï¸ Using SOCKS5 proxy: ${hostname}:${port}`);
+  } else {
+    this.agent = new HttpsProxyAgent(proxyUrl);
+    console.log(`ðŸ›¡ï¸ Using HTTPS proxy: ${hostname}:${port}`);
+  }
+
+  // Buat axios instance terlepas dari jenis proxy
+  this.axios = axios.create({
+    httpAgent:  this.agent,
+    httpsAgent: this.agent,
+    proxy:      false,
+    timeout:    10000
+  });
+}
 
   async claimFaucets() {
     console.log(`\n=== Claim Faucets for ${this.address} ===`);
@@ -166,9 +171,9 @@ class WalletBot {
     for (const [tk, url] of Object.entries(endpoints)) {
       try {
         const res = await this.axios.post(url, { address: this.address });
-        if (res.status === 200) console.log(`✓ Claimed ${tk}`);
+        if (res.status === 200) console.log(`âœ“ Claimed ${tk}`);
       } catch (e) {
-        console.error(`✗ Claim ${tk} failed:`, e.response?.data || e.message);
+        console.error(`âœ— Claim ${tk} failed:`, e.response?.data || e.message);
       }
       await delay(this.config.delayMs);
     }
@@ -290,7 +295,7 @@ class WalletBot {
       console.log(`TX Hash: ${tx.hash}`);
       await tx.wait();
       console.log(`Staked ${formatted} ${symbol}`);
-      await sendReport(`✅ Stake *${tokenName}* berhasil\nHash: \`${tx.hash}\`\nJumlah: ${formatted} ${symbol}`);
+      await sendReport(`âœ… Stake *${tokenName}* berhasil\nHash: \`${tx.hash}\`\nJumlah: ${formatted} ${symbol}`);
 
     } catch (e) {
       console.error(`Stake failed: ${e.message}`);
@@ -300,7 +305,7 @@ class WalletBot {
 
   async runBot() {
     try {
-      console.log(`\n🚀 Starting bot for ${this.address}`);
+      console.log(`\nðŸš€ Starting bot for ${this.address}`);
       await this.claimFaucets();
       await this.checkWalletStatus();
       await this.swapToken('virtual');
@@ -314,7 +319,7 @@ class WalletBot {
       await this.stakeToken('vnusd', '0x46a6585a0Ad1750d37B4e6810EB59cBDf591Dc30');
       await this.stakeToken('azusd', '0x5966cd11aED7D68705C9692e74e5688C892cb162');
       await this.checkWalletStatus();
-      console.log(`✅ Finished ${this.address}`);
+      console.log(`âœ… Finished ${this.address}`);
     } catch (e) {
       console.error(`Bot error: ${e.message}`);
       debugLog('BOT_ERROR', e);
@@ -326,33 +331,30 @@ class WalletBot {
       const res = await this.axios.get('https://api.ipify.org?format=json', { timeout: 5000 });
       return res.data.ip;
     } catch (e) {
-      console.warn(`⚠️ Failed to fetch IP for ${this.address}:`, e.message);
+      console.warn(`âš ï¸ Failed to fetch IP for ${this.address}:`, e.message);
       return null;
     }
   }
 }
 
 (async () => {
-  console.log('🔌 Initializing bot...');
+  console.log('ðŸ”Œ Initializing bot...');
 
   const keys = getPrivateKeys();
   for (const key of keys) {
-    rotateTorIp();
-    console.log('🔄 Rotated Tor IP for new wallet');
-    await delay(5000);
     const bot = new WalletBot(key, globalConfig);
-    await bot.init();
+    await bot.init(true);
     const ip = await bot.getCurrentIp();
-    console.log(`🌍 Current IP: ${ip || 'No proxy detected'}`);
+    console.log(`ðŸŒ Current IP: ${ip || 'No proxy detected'}`);
     await bot.runBot();
     await delay(globalConfig.delayMs);
   }
 
-  console.log('\n🔄 Scheduling next run (24 hours)');
+  console.log('\nðŸ”„ Scheduling next run (24 hours)');
   setTimeout(() => process.exit(0), 24 * 60 * 60 * 1000);
 })();
 
-// ======================== 🛡 ERROR HANDLING ========================
+// ======================== ðŸ›¡ ERROR HANDLING ========================
 process.on('unhandledRejection', (reason) => {
   console.error('Unhandled Rejection:', reason);
   debugLog('UNHANDLED_REJECTION', reason);
