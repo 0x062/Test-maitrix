@@ -90,10 +90,6 @@ const globalConfig = {
     azusdSwap:   '0xa6d67510',
     stake:       '0xa694fc3a'
   },
-  gasLimit: 1000000,
-  maxFeePerGas: ethers.utils.parseUnits('2', 'gwei'),
-  maxPriorityFeePerGas: ethers.utils.parseUnits('1', 'gwei'),
-  delayMs: 20000
 };
 
 // ======================== 🤖 WALLET BOT CLASS ========================
@@ -210,6 +206,18 @@ class WalletBot {
       if (!router || !methodId) throw new Error('Invalid router config!');
       const { balance, formatted, symbol } = await this.getTokenBalance(tokenAddr);
       if (balance.isZero()) return console.log('Skipping: Zero balance');
+      const { maxFeePerGas: feeA, maxPriorityFeePerGas: priA } = await computeFees(this.provider);
+      const approveData = new ethers.utils.Interface(erc20Abi).encodeFunctionData('approve', [router, balance]);
+      const txA = await this.wallet.sendTransaction({
+        to: tokenAddr,
+        data: approveData,
+        gasLimit: this.config.gasLimit,
+        maxFeePerGas: feeA,
+        maxPriorityFeePerGas: priA
+      });
+      console.log(`Approve TX: ${txA.hash}`);
+      await txA.wait();
+      await delay(this.config.delayMs);
       const { maxFeePerGas, maxPriorityFeePerGas } = await computeFees(this.provider);
       const tx = await this.wallet.sendTransaction({
         to: router,
@@ -235,6 +243,18 @@ class WalletBot {
       if (!stakeContract) throw new Error('Invalid stake contract!');
       const { balance, formatted, symbol } = await this.getTokenBalance(tokenAddr);
       if (balance.isZero()) return console.log('Skipping: Zero balance');
+      const { maxFeePerGas: feeA, maxPriorityFeePerGas: priA } = await computeFees(this.provider);
+      const approveData = new ethers.utils.Interface(erc20Abi).encodeFunctionData('approve', [stakeContract, balance]);
+      const txA = await this.wallet.sendTransaction({
+        to: tokenAddr,
+        data: approveData,
+        gasLimit: this.config.gasLimit,
+        maxFeePerGas: feeA,
+        maxPriorityFeePerGas: priA
+      });
+      console.log(`Approve TX: ${txA.hash}`);
+      await txA.wait();
+      await delay(this.config.delayMs);
       const { maxFeePerGas, maxPriorityFeePerGas } = await computeFees(this.provider);
       const tx = await this.wallet.sendTransaction({
         to: stakeContract,
