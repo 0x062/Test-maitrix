@@ -1,5 +1,8 @@
 require('dotenv').config();
 const { execSync } = require('child_process');
+const fetch = require('node-fetch');
+const { computeFees } = require('./utils');
+const { ProxyAgent } = require('proxy-agent');
 const { ethers } = require('ethers');
 const { sendReport } = require('./telegramReporter');
 const axios = require('axios');
@@ -11,7 +14,7 @@ const dns = require('dns').promises;
 
 const TOR_PROXY = process.env.TOR_PROXY || null;
 
-// ======================== ðŸ›  HELPER FUNCTIONS ========================
+// ======================== 🛠 HELPER FUNCTIONS ========================
 const debugStream = fs.createWriteStream(
   path.join(__dirname, 'debugging.log'), 
   { flags: 'a' }
@@ -45,7 +48,7 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// ======================== âš™ï¸ CONFIGURATION ========================
+// ======================== ⚙️ CONFIGURATION ========================
 const erc20Abi = [
   'function balanceOf(address) view returns (uint)',
   'function decimals() view returns (uint8)',
@@ -90,16 +93,14 @@ const globalConfig = {
   gasLimit: 1000000,
   maxFeePerGas: ethers.utils.parseUnits('2', 'gwei'),
   maxPriorityFeePerGas: ethers.utils.parseUnits('1', 'gwei'),
-  delayMs: 17000
+  delayMs: 20000
 };
 
-// ======================== ðŸ¤– WALLET BOT CLASS ========================
-
+// ======================== 🤖 WALLET BOT CLASS ========================
 class WalletBot {
-  constructor(privateKey, config) {
-    
+  constructor(privateKey, config, proxyUrl) {
     this._key      = privateKey;
-    this._proxyUrl = TOR_PROXY;
+    this._proxyUrl = proxyUrl;     // e.g. process.env.TOR_PROXY
     this.config    = config;
     this.axios     = axios;
     this.agent     = null;
@@ -110,53 +111,36 @@ class WalletBot {
     try {
       const cookie = execSync('xxd -ps /run/tor/control.authcookie').toString().trim();
       execSync(`printf "AUTHENTICATE ${cookie}\r\nSIGNAL NEWNYM\r\n" | nc localhost 9051`);
-      await delay(5000);
-      console.log('ðŸ”„ Tor identity rotated');
+      console.log('🔄 Tor: requested new circuit');
     } catch (e) {
-      console.warn('âš ï¸ rotateTorIdentity gagal:', e.message);
+      console.warn('⚠️ rotateTorIdentity error:', e.message);
     }
   }
 
-  async init(useNewIdentity = false) {
-    if (useNewIdentity) {
-      await this.rotateTorIdentity();
-      }
-    
-  await this._setupProxy(this._proxyUrl);
-  this.provider = new ethers.providers.JsonRpcProvider({
-    url: this.config.rpc,
-    fetchOptions: this.agent ? { agent: this.agent } : undefined
-  });
-  // inisialisasi wallet dan simpan address
-  this.wallet  = new ethers.Wallet(this._key, this.provider);
-  this.address = this.wallet.address;
+  async _setupProxy() {
+    if (!this._proxyUrl) {
+      console.log('🌐 No proxy configured');
+      return;
+    }
+    this.agent = new SocksProxyAgent(this._proxyUrl);
+    console.log(`🛡️ Using SOCKS proxy: ${this._proxyUrl}`);
+    this.axios = axios.create({
+      httpAgent: this.agent,
+      httpsAgent: this.agent,
+      proxy: false,
+      timeout: 10000,
+    });
   }
 
-  // â–¶ï¸ Method ini harus di dalam class, sejajar dengan init()
-  async _setupProxy(proxyUrl) {
-  if (!proxyUrl) {
-    console.log('ðŸŒ No proxy configured');
-    return;
+  async init() {
+    await this._setupProxy();
+    this.provider = new ethers.providers.JsonRpcProvider({
+      url: this.config.rpc,
+      fetch: (url, init) => fetch(url, { ...init, agent: this.agent })
+    });
+    this.wallet  = new ethers.Wallet(this._key, this.provider);
+    this.address = this.wallet.address;
   }
-  const { hostname, port, protocol } = new URL(proxyUrl);
-  await dns.lookup(hostname);
-
-  if (protocol.startsWith('socks')) {
-    this.agent = new SocksProxyAgent(proxyUrl);
-    console.log(`ðŸ›¡ï¸ Using SOCKS5 proxy: ${hostname}:${port}`);
-  } else {
-    this.agent = new HttpsProxyAgent(proxyUrl);
-    console.log(`ðŸ›¡ï¸ Using HTTPS proxy: ${hostname}:${port}`);
-  }
-
-  // Buat axios instance terlepas dari jenis proxy
-  this.axios = axios.create({
-    httpAgent:  this.agent,
-    httpsAgent: this.agent,
-    proxy:      false,
-    timeout:    10000
-  });
-}
 
   async claimFaucets() {
     console.log(`\n=== Claim Faucets for ${this.address} ===`);
@@ -166,15 +150,14 @@ class WalletBot {
       lvlusd:  'https://app.x-network.io/maitrix-lvl/faucet',
       virtual: 'https://app.x-network.io/maitrix-virtual/faucet',
       vana:    'https://app.x-network.io/maitrix-vana/faucet',
-      ai16z:    'https://app.x-network.io/maitrix-ai16z/faucet'
-    }
-    
+      ai16z:   'https://app.x-network.io/maitrix-ai16z/faucet'
+    };
     for (const [tk, url] of Object.entries(endpoints)) {
       try {
         const res = await this.axios.post(url, { address: this.address });
-        if (res.status === 200) console.log(`âœ“ Claimed ${tk}`);
+        if (res.status === 200) console.log(`✓ Claimed ${tk}`);
       } catch (e) {
-        console.error(`âœ— Claim ${tk} failed:`, e.response?.data || e.message);
+        console.error(`✗ Claim ${tk} failed:`, e.response?.data || e.message);
       }
       await delay(this.config.delayMs);
     }
@@ -224,37 +207,20 @@ class WalletBot {
       const tokenAddr = this.config.tokens[tokenName];
       const router    = this.config.routers[tokenName];
       const methodId  = this.config.methodIds[`${tokenName}Swap`];
-
       if (!router || !methodId) throw new Error('Invalid router config!');
-
       const { balance, formatted, symbol } = await this.getTokenBalance(tokenAddr);
-      if (balance.isZero()) {
-        console.log('Skipping: Zero balance');
-        return;
-      }
-
-      const approveTx = await new ethers.Contract(tokenAddr, erc20Abi, this.wallet)
-        .approve(router, balance, {
-          gasLimit: this.config.gasLimit,
-          maxFeePerGas: this.config.maxFeePerGas,
-          maxPriorityFeePerGas: this.config.maxPriorityFeePerGas
-        });
-      await approveTx.wait();
-      await delay(this.config.delayMs);
-
-      const data = methodId + ethers.utils.defaultAbiCoder
-        .encode(['uint256'], [balance]).slice(2);
+      if (balance.isZero()) return console.log('Skipping: Zero balance');
+      const { maxFeePerGas, maxPriorityFeePerGas } = await computeFees(this.provider);
       const tx = await this.wallet.sendTransaction({
         to: router,
-        data,
+        data: methodId + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2),
         gasLimit: this.config.gasLimit,
-        maxFeePerGas: this.config.maxFeePerGas,
-        maxPriorityFeePerGas: this.config.maxPriorityFeePerGas
+        maxFeePerGas: maxFeePerGas,
+        maxPriorityFeePerGas: maxPriorityFeePerGas
       });
       console.log(`TX Hash: ${tx.hash}`);
       await tx.wait();
       console.log(`Swapped ${formatted} ${symbol}`);
-
     } catch (e) {
       console.error(`Swap failed: ${e.message}`);
       debugLog('SWAP_ERROR', e);
@@ -264,34 +230,18 @@ class WalletBot {
   async stakeToken(tokenName, customAddr = null) {
     try {
       console.log(`\nStaking ${tokenName}...`);
-      const tokenAddr = customAddr || this.config.tokens[tokenName];
+      const tokenAddr     = customAddr || this.config.tokens[tokenName];
       const stakeContract = this.config.stakeContracts[tokenName];
-
       if (!stakeContract) throw new Error('Invalid stake contract!');
-
       const { balance, formatted, symbol } = await this.getTokenBalance(tokenAddr);
-      if (balance.isZero()) {
-        console.log('Skipping: Zero balance');
-        return;
-      }
-
-      const approveTx = await new ethers.Contract(tokenAddr, erc20Abi, this.wallet)
-        .approve(stakeContract, balance, {
-          gasLimit: this.config.gasLimit,
-          maxFeePerGas: this.config.maxFeePerGas,
-          maxPriorityFeePerGas: this.config.maxPriorityFeePerGas
-        });
-      await approveTx.wait();
-      await delay(this.config.delayMs);
-
-      const data = this.config.methodIds.stake
-        + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2);
+      if (balance.isZero()) return console.log('Skipping: Zero balance');
+      const { maxFeePerGas, maxPriorityFeePerGas } = await computeFees(this.provider);
       const tx = await this.wallet.sendTransaction({
         to: stakeContract,
-        data,
+        data: this.config.methodIds.stake + ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]).slice(2),
         gasLimit: this.config.gasLimit,
-        maxFeePerGas: this.config.maxFeePerGas,
-        maxPriorityFeePerGas: this.config.maxPriorityFeePerGas
+        maxFeePerGas: maxFeePerGas,
+        maxPriorityFeePerGas: maxPriorityFeePerGas
       });
       console.log(`TX Hash: ${tx.hash}`);
       await tx.wait();
@@ -301,7 +251,6 @@ class WalletBot {
         `Hash: \`${tx.hash}\`\n` +
         `Jumlah: ${formatted} ${symbol}`
       );
-      
     } catch (e) {
       console.error(`Stake failed: ${e.message}`);
       debugLog('STAKE_ERROR', e);
@@ -310,7 +259,7 @@ class WalletBot {
 
   async runBot() {
     try {
-      console.log(`\nðŸš€ Starting bot for ${this.address}`);
+      console.log(`\n🚀 Starting bot for ${this.address}`);
       await this.claimFaucets();
       await this.checkWalletStatus();
       await this.swapToken('virtual');
@@ -323,14 +272,13 @@ class WalletBot {
       await this.stakeToken('vusd');
       await this.stakeToken('vnusd', '0x46a6585a0Ad1750d37B4e6810EB59cBDf591Dc30');
       await this.stakeToken('azusd', '0x5966cd11aED7D68705C9692e74e5688C892cb162');
-
       if (this._reportBuffer.length > 0) {
         const fullReport = this._reportBuffer.join('\n\n');
         await sendReport(fullReport);
         this._reportBuffer = [];
       }
       await this.checkWalletStatus();
-      console.log(`âœ… Finished ${this.address}`);
+      console.log(`✅ Finished ${this.address}`);
     } catch (e) {
       console.error(`Bot error: ${e.message}`);
       debugLog('BOT_ERROR', e);
@@ -338,34 +286,58 @@ class WalletBot {
   }
 
   async getCurrentIp() {
-    try {
-      const res = await this.axios.get('https://api.ipify.org?format=json', { timeout: 5000 });
-      return res.data.ip;
-    } catch (e) {
-      console.warn(`âš ï¸ Failed to fetch IP for ${this.address}:`, e.message);
-      return null;
+    const services = [
+      {
+        url: 'https://api.ipify.org?format=json',
+        parse: res => res.data.ip
+      },
+      {
+        url: 'https://ifconfig.co/json',
+        parse: res => res.data.ip
+      },
+      {
+        url: 'https://ident.me',
+        parse: res => res.data.trim()
+      }
+    ];
+
+    for (const svc of services) {
+      try {
+        const res = await this.axios.get(svc.url);
+        const ip  = svc.parse(res);
+        console.log(`🌍 Proxy IP (via ${svc.url}): ${ip}`);
+        return ip;
+      } catch (err) {
+        console.warn(`⚠️ IP fetch failed at ${svc.url}: ${err.response?.status || err.message}`);
+      }
     }
+
+    console.error('❌ Semua endpoint IP gagal, IP tetap null');
+    return null;
   }
 }
 
+module.exports = WalletBot;
+
+
 (async () => {
-  console.log('ðŸ”Œ Initializing bot...');
+  console.log('🔌 Initializing bot...');
 
   const keys = getPrivateKeys();
-  for (const key of keys) {
-    const bot = new WalletBot(key, globalConfig);
-    await bot.init(true);
-    const ip = await bot.getCurrentIp();
-    console.log(`ðŸŒ Current IP: ${ip || 'No proxy detected'}`);
+  const torProxy = process.env.TOR_PROXY;
+  for (let i = 0; i < keys.length; i++) {
+    const bot = new WalletBot(keys[i], globalConfig, torProxy);
+    await bot.rotateTorIdentity();
+    await delay(65000);
+    await bot.init();
+    console.log(`🌍 Wallet ${i+1} IP:`, await bot.getCurrentIp());
     await bot.runBot();
     await delay(globalConfig.delayMs);
   }
 
-  console.log('\nðŸ”„ Scheduling next run (24 hours)');
-  setTimeout(() => process.exit(0), 24 * 60 * 60 * 1000);
 })();
 
-// ======================== ðŸ›¡ ERROR HANDLING ========================
+// ======================== 🛡 ERROR HANDLING ========================
 process.on('unhandledRejection', (reason) => {
   console.error('Unhandled Rejection:', reason);
   debugLog('UNHANDLED_REJECTION', reason);
