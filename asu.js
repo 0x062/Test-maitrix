@@ -90,6 +90,8 @@ const globalConfig = {
     azusdSwap:   '0xa6d67510',
     stake:       '0xa694fc3a'
   },
+  gasLimit: 1000000,
+  delayMs: 20000
 };
 
 // ======================== 🤖 WALLET BOT CLASS ========================
