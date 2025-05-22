@@ -1,12 +1,14 @@
-// utils.js
-async function computeFees(provider, priorityGwei=1, bufferPct=0.1) { … }
+const { ethers } = require('ethers');
 
-async function sendEip1559Tx({ wallet, provider, to, data, gasLimit }) {
-  const { maxFeePerGas, maxPriorityFeePerGas } = await computeFees(provider);
-  console.log(`▶️ Sending tx to ${to}, fees: maxFee ${maxFeePerGas}, priority ${maxPriorityFeePerGas}`);
-  const tx = await wallet.sendTransaction({ to, data, gasLimit, maxFeePerGas, maxPriorityFeePerGas });
-  const receipt = await tx.wait();
-  return receipt.transactionHash;
+async function computeFees(provider, priorityGwei = 1, bufferPct = 0.1) {
+  const latest = await provider.getBlock('latest');
+  const baseFee = latest.baseFeePerGas;
+  const priorityFee = ethers.utils.parseUnits(String(priorityGwei), 'gwei');
+  const buffer = baseFee.mul(Math.floor(bufferPct * 100)).div(100);
+  return {
+    maxFeePerGas: baseFee.add(priorityFee).add(buffer),
+    maxPriorityFeePerGas: priorityFee
+  };
 }
 
-module.exports = { computeFees, sendEip1559Tx };
+module.exports = { computeFees };
