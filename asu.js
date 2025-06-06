@@ -76,7 +76,7 @@ const globalConfig = {
     ath:     '0x2cFDeE1d5f04dD235AEA47E1aD2fB66e3A61C13e',
     vnusd:   '0xEfbAE3A68b17a61f21C7809Edfa8Aa3CA7B2546f',
     azusd:   '0xb0b53d8b4ef06f9bbe5db624113c6a5d35bb7522',
-    OGusd:   '0xFBBDAb7684A4Da0CFAE67C5c13fA73402008953e'
+    OGusd:   '0x0b4301877a981e7808a8f4b6e277c376960c7641'
   },
   stakeContracts: {
     ausd:  '0x054de909723ECda2d119E31583D40a52a332f85c',
