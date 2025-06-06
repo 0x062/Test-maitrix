@@ -149,13 +149,13 @@ class WalletBot {
   async claimFaucets() {
     console.log(`\n=== Claim Faucets for ${this.address} ===`);
     const endpoints = {
-      /*ath:     'https://app.x-network.io/maitrix-faucet/faucet',
+      ath:     'https://app.x-network.io/maitrix-faucet/faucet',
       usde:    'https://app.x-network.io/maitrix-usde/faucet',
       lvlusd:  'https://app.x-network.io/maitrix-lvl/faucet',
       virtual: 'https://app.x-network.io/maitrix-virtual/faucet',
       vana:    'https://app.x-network.io/maitrix-vana/faucet',
       ai16z:   'https://app.x-network.io/maitrix-ai16z/faucet',
-      usd1:   'https://app.x-network.io/maitrix-usd1/faucet',*/
+      usd1:   'https://app.x-network.io/maitrix-usd1/faucet',
       OG:   'https://app.x-network.io/maitrix-0g/faucet'
     };
     for (const [tk, url] of Object.entries(endpoints)) {
