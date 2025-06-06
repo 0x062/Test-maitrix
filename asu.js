@@ -76,7 +76,7 @@ const globalConfig = {
     ath:     '0x2cFDeE1d5f04dD235AEA47E1aD2fB66e3A61C13e',
     vnusd:   '0xEfbAE3A68b17a61f21C7809Edfa8Aa3CA7B2546f',
     azusd:   '0xb0b53d8b4ef06f9bbe5db624113c6a5d35bb7522',
-    OGusd:   '0x0b4301877A981e7808A8F4B6E277C376960C7641'
+    OGusd:   '0xFBBDAb7684A4Da0CFAE67C5c13fA73402008953e'
   },
   stakeContracts: {
     ausd:  '0x054de909723ECda2d119E31583D40a52a332f85c',
@@ -156,7 +156,7 @@ class WalletBot {
       vana:    'https://app.x-network.io/maitrix-vana/faucet',
       ai16z:   'https://app.x-network.io/maitrix-ai16z/faucet',
       usd1:   'https://app.x-network.io/maitrix-usd1/faucet',*/
-      OG:   'https://app.x-network.io/maitrix-og/faucet'
+      OG:   'https://app.x-network.io/maitrix-0g/faucet'
     };
     for (const [tk, url] of Object.entries(endpoints)) {
       try {
