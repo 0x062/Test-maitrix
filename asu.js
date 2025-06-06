@@ -156,9 +156,7 @@ class WalletBot {
       vana:    'https://app.x-network.io/maitrix-vana/faucet',
       ai16z:   'https://app.x-network.io/maitrix-ai16z/faucet',
       usd1:   'https://app.x-network.io/maitrix-usd1/faucet',*/
-      OG:   'https://app.x-network.io/maitrix-og/faucet',
-      OG:   'https://app.x-network.io/maitrix-OG/faucet',
-      OG:   'https://app.x-network.io/maitrix-0g/faucet'
+      OG:   'https://app.x-network.io/maitrix-og/faucet'
     };
     for (const [tk, url] of Object.entries(endpoints)) {
       try {
@@ -306,7 +304,7 @@ class WalletBot {
       await this.stakeToken('vnusd', '0x46a6585a0Ad1750d37B4e6810EB59cBDf591Dc30');
       await this.stakeToken('azusd', '0x5966cd11aED7D68705C9692e74e5688C892cb162');
       await this.stakeToken('usd1');
-      await this.stakeToken('OGusd');
+      await this.stakeToken('OGusd', '0xD23016Fd7154d9A6F2830Bfb4eA3F3106AAE0E88');
       if (this._reportBuffer.length > 0) {
         const fullReport = this._reportBuffer.join('\n\n');
         await sendReport(fullReport);
