@@ -48,6 +48,15 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// ======================== 🛠 HELPER FUNCTIONS ========================
+
+// ... (letakkan setelah fungsi delay)
+
+function shortenAddress(address) {
+  if (!address || address.length < 12) return address; // Pengaman jika address tidak valid
+  return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
+}
+
 // ======================== ⚙️ CONFIGURATION ========================
 const erc20Abi = [
   'function balanceOf(address) view returns (uint)',
@@ -278,7 +287,7 @@ class WalletBot {
       console.log(`Staked ${formatted} ${symbol}`);
       this._reportBuffer.push(
         `✅ Stake *${tokenName}* berhasil\n` +
-        `Hash: \`${tx.hash}\`\n` +
+        `Hash: \`${shortenAddress(tx.hash)}\`\n` + // <-- PERUBAHAN DI SINI
         `Jumlah: ${formatted} ${symbol}`
       );
     } catch (e) {
@@ -290,7 +299,7 @@ class WalletBot {
   async runBot() {
     try {
       // 1. Tambahkan header di awal untuk laporan
-      this._reportBuffer.push(`🚀 **Laporan Bot untuk Wallet**:\n\`${this.address}\``);
+      this._reportBuffer.push(`🚀 **Laporan Bot untuk Wallet**:\n\`${shortenAddress(this.address)}\``); // <-- PERUBAHAN DI SINI
 
       console.log(`\n🚀 Starting bot for ${this.address}`);
       await this.claimFaucets();
@@ -303,7 +312,7 @@ class WalletBot {
       await this.swapToken('azusd');
       await this.swapToken('OGusd');
 
-      // Proses Staking (setiap stake yang berhasil akan menambahkan detail ke buffer)
+      // Proses Staking
       await this.stakeToken('ausd');
       await this.stakeToken('usde');
       await this.stakeToken('lvlusd');
@@ -313,26 +322,17 @@ class WalletBot {
       await this.stakeToken('usd1');
       await this.stakeToken('OGusd', '0xD23016Fd7154d9A6F2830Bfb4eA3F3106AAE0E88');
 
-      // Hitung jumlah stake yang berhasil dari buffer (dikurangi 1 karena ada header)
       const successfulStakes = this._reportBuffer.length - 1;
 
       // 2. Kirim laporan HANYA jika ada aksi staking yang berhasil
       if (successfulStakes > 0) {
-        // Tambahkan ringkasan di akhir sebelum mengirim
         this._reportBuffer.push(`\n🏁 **Ringkasan**: ${successfulStakes} aksi staking berhasil dieksekusi.`);
-        
         const fullReport = this._reportBuffer.join('\n\n');
         await sendReport(fullReport);
       } else {
-        // Jika tidak ada stake yang berhasil, kita bisa kirim notifikasi info atau diam saja.
-        // Opsi A: Kirim notifikasi bahwa tidak ada aksi
-        // await sendReport(`ℹ️ **Info untuk Wallet**:\n\`${this.address}\`\n\nTidak ada token yang di-stake pada putaran ini.`);
-        
-        // Opsi B (default): Jangan lakukan apa-apa (tidak ada laporan = tidak ada spam)
         console.log(`Tidak ada laporan dikirim untuk ${this.address} karena tidak ada aksi staking.`);
       }
       
-      // 3. Selalu kosongkan buffer di akhir
       this._reportBuffer = [];
 
       await this.checkWalletStatus();
@@ -341,7 +341,7 @@ class WalletBot {
       console.error(`Bot error: ${e.message}`);
       debugLog('BOT_ERROR', e);
       // Kirim laporan jika terjadi kegagalan fatal pada bot
-      await sendReport(`❌ **ERROR pada Bot**\nWallet: \`${this.address}\`\n\nPesan: ${e.message}`);
+      await sendReport(`❌ **ERROR pada Bot**\nWallet: \`${shortenAddress(this.address)}\`\n\nPesan: ${e.message}`); // <-- PERUBAHAN DI SINI
     }
   }
 
