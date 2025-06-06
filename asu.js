@@ -94,7 +94,7 @@ const globalConfig = {
     vnusdSwap:   '0xa6d67510',
     azusdSwap:   '0xa6d67510',
     stake:       '0xa694fc3a',
-    OGSwap: '0xa6d67510'
+    OGusdSwap: '0xa6d67510'
   },
   gasLimit: 1000000,
   delayMs: 20000
