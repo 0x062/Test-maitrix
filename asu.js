@@ -68,13 +68,15 @@ const globalConfig = {
     vusd:    '0xc14A8E2Fc341A97a57524000bF0F7F1bA4de4802',
     vnusd:   '0xBEbF4E25652e7F23CCdCCcaaCB32004501c4BfF8',
     azusd:   '0x2d5a4f5634041f50180A25F26b2A8364452E3152',
-    usd1:   '0x16a8A3624465224198d216b33E825BcC3B80abf7'
+    usd1:   '0x16a8A3624465224198d216b33E825BcC3B80abf7',
+    OGusd:   '0xFBBDAb7684A4Da0CFAE67C5c13fA73402008953e'
   },
   routers: {
     virtual: '0x3dCACa90A714498624067948C092Dd0373f08265',
     ath:     '0x2cFDeE1d5f04dD235AEA47E1aD2fB66e3A61C13e',
     vnusd:   '0xEfbAE3A68b17a61f21C7809Edfa8Aa3CA7B2546f',
-    azusd:   '0xb0b53d8b4ef06f9bbe5db624113c6a5d35bb7522'
+    azusd:   '0xb0b53d8b4ef06f9bbe5db624113c6a5d35bb7522',
+    OGusd:   '0x0b4301877A981e7808A8F4B6E277C376960C7641'
   },
   stakeContracts: {
     ausd:  '0x054de909723ECda2d119E31583D40a52a332f85c',
@@ -83,14 +85,16 @@ const globalConfig = {
     vusd:  '0x5bb9Fa02a3DCCDB4E9099b48e8Ba5841D2e59d51',
     vnusd: '0x2608A88219BFB34519f635Dd9Ca2Ae971539ca60',
     azusd: '0xf45fde3f484c44cc35bdc2a7fca3ddde0c8f252e',
-    usd1: '0x7799841734Ac448b8634F1c1d7522Bc8887A7bB9'
+    usd1: '0x7799841734Ac448b8634F1c1d7522Bc8887A7bB9',
+    OGusd: '0xF8F951DA83dAC732A2dCF207B644E493484047eB'
   },
   methodIds: {
     virtualSwap: '0xa6d67510',
     athSwap:     '0x1bf6318b',
     vnusdSwap:   '0xa6d67510',
     azusdSwap:   '0xa6d67510',
-    stake:       '0xa694fc3a'
+    stake:       '0xa694fc3a',
+    OGSwap: '0xa6d67510'
   },
   gasLimit: 1000000,
   delayMs: 20000
@@ -291,6 +295,7 @@ class WalletBot {
       await this.swapToken('ath');
       await this.swapToken('vnusd');
       await this.swapToken('azusd');
+      await this.swapToken('OGusd');
       await this.stakeToken('ausd');
       await this.stakeToken('usde');
       await this.stakeToken('lvlusd');
@@ -298,6 +303,7 @@ class WalletBot {
       await this.stakeToken('vnusd', '0x46a6585a0Ad1750d37B4e6810EB59cBDf591Dc30');
       await this.stakeToken('azusd', '0x5966cd11aED7D68705C9692e74e5688C892cb162');
       await this.stakeToken('usd1');
+      await this.stakeToken('OGusd');
       if (this._reportBuffer.length > 0) {
         const fullReport = this._reportBuffer.join('\n\n');
         await sendReport(fullReport);
