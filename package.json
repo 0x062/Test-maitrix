@@ -1,26 +1,16 @@
 {
-  "name": "wallet-bot",
+  "name": "simple-arbitrum-bot",
   "version": "1.0.0",
-  "description": "Automated wallet bot with Tor proxy rotation, token swaps, and staking",
-  "main": "index.js",
+  "description": "Bot sederhana untuk claim faucet, swap, dan staking di Arbitrum Sepolia.",
+  "main": "bot.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js",
-    "lint": "eslint ."
+    "start": "node bot.js"
   },
   "author": "",
-  "license": "MIT",
+  "license": "ISC",
   "dependencies": {
-    "axios": "latest",
-    "dotenv": "latest",
+    "dotenv": "^16.4.5",
     "ethers": "^5.7.2",
-    "proxy-agent": "latest",
-    "node-fetch": "latest",
-    "https-proxy-agent": "latest",
-    "socks-proxy-agent": "latest"
-  },
-  "devDependencies": {
-    "nodemon": "latest",
-    "eslint": "latest"
+    "node-fetch": "^2.7.0"
   }
 }
