@@ -239,7 +239,7 @@ class WalletBot {
   async runBot() {
     try {
       console.log(`\n🚀 Starting bot for ${this.address}`);
-      await this.claimFaucets();
+      //await this.claimFaucets();
       await this.checkWalletStatus();
       
       // Proses Swap
